@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,7 +63,7 @@ test('unmanaged existing profiles are refused before an app can access their cre
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const preferences = path.join(directory, 'Preferences');
   fs.writeFileSync(preferences, 'existing app data');
-  const session = new Session(new URL('../examples/ipc-app', import.meta.url).pathname, {
+  const session = new Session(fileURLToPath(new URL('../examples/ipc-app', import.meta.url)), {
     profile: directory,
   });
   t.after(() => session.stop());
@@ -75,7 +76,7 @@ test(
   'ordinary app preserves IPC, disk writes, terminal typing/clicking, scroll, resizing, multiple windows, and hidden native windows',
   { timeout: 35000 },
   async (t) => {
-    const session = new Session(new URL('../examples/ipc-app', import.meta.url).pathname, {
+    const session = new Session(fileURLToPath(new URL('../examples/ipc-app', import.meta.url)), {
       test: true,
       width: 1000,
       height: 700,
@@ -211,7 +212,7 @@ test(
   'hidden utility windows do not steal the selected app surface',
   { timeout: 15000 },
   async (t) => {
-    const session = new Session(new URL('../examples/ipc-app', import.meta.url).pathname, {
+    const session = new Session(fileURLToPath(new URL('../examples/ipc-app', import.meta.url)), {
       test: true,
     });
     t.after(() => session.stop());
@@ -267,7 +268,7 @@ test(
 );
 
 test('ES-module source app preserves named Electron imports', { timeout: 15000 }, async (t) => {
-  const session = new Session(new URL('../examples/esm-app', import.meta.url).pathname, {
+  const session = new Session(fileURLToPath(new URL('../examples/esm-app', import.meta.url)), {
     test: true,
   });
   t.after(() => session.stop());
@@ -293,7 +294,7 @@ test(
     fs.rmSync(path.join(resources, 'default_app.asar'), { force: true });
     const archive = path.join(resources, 'app.asar');
     const fixture = path.join(directory, 'source');
-    fs.cpSync(new URL('../examples/esm-app', import.meta.url).pathname, fixture, {
+    fs.cpSync(fileURLToPath(new URL('../examples/esm-app', import.meta.url)), fixture, {
       recursive: true,
     });
     const helper = path.join(fixture, 'fixture-helper');
