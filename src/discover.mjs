@@ -4,6 +4,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { extractFile } from '@electron/asar';
+import { electronFramework } from './bundle.mjs';
 
 const exec = promisify(execFile);
 const ignored = new Set(['node_modules', 'profiles', 'proof', 'work', 'Caches', 'Library']);
@@ -78,8 +79,6 @@ export async function discoverApplications({
           const file = await fs.realpath(candidate);
           if (seen.has(file) || !file.endsWith('.app') || file.includes('.app/Contents/')) continue;
           seen.add(file);
-          if (!(await exists(path.join(file, 'Contents/Frameworks/Electron Framework.framework'))))
-            continue;
           if (await exists(path.join(path.dirname(file), 'runtime.json'))) continue;
           const resources = path.join(file, 'Contents/Resources');
           if (
@@ -87,6 +86,7 @@ export async function discoverApplications({
             !(await exists(path.join(resources, 'app/package.json')))
           )
             continue;
+          if (!(await electronFramework(file))) continue;
           try {
             const archive = path.join(resources, 'app.asar');
             const pkg = JSON.parse(
@@ -110,6 +110,7 @@ export async function discoverApplications({
           apps.push({
             name: info.CFBundleDisplayName || path.basename(file, '.app') || info.CFBundleName,
             path: file,
+            ...(info.CFBundleIdentifier ? { id: info.CFBundleIdentifier } : {}),
           });
         } catch {}
       }

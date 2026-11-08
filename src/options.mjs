@@ -4,6 +4,7 @@ export function parseArguments(args) {
   let help = false;
   let version = false;
   let list = false;
+  let completion;
   const directories = [];
   const options = { args: [], frameFormat: 'bgra' };
   while (args.length) {
@@ -15,10 +16,22 @@ export function parseArguments(args) {
     if (arg === '--help' || arg === '-h') help = true;
     else if (arg === '--version' || arg === '-v') version = true;
     else if (arg === '--list') list = true;
-    else if (['--profile', '--electron', '--import-profile', '--fps', '--app-dir'].includes(arg)) {
+    else if (
+      [
+        '--profile',
+        '--electron',
+        '--import-profile',
+        '--fps',
+        '--app-dir',
+        '--completion',
+      ].includes(arg)
+    ) {
       const value = args.shift();
       if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value.`);
-      if (arg === '--app-dir') directories.push(value);
+      if (arg === '--completion') {
+        if (value !== 'zsh') throw new Error('Supported shell completion: zsh.');
+        completion = value;
+      } else if (arg === '--app-dir') directories.push(value);
       else
         options[
           {
@@ -40,5 +53,5 @@ export function parseArguments(args) {
     throw new Error('--fps must be an integer between 1 and 60.');
   if (options.importProfile && !options.profile)
     throw new Error('--import-profile requires a new --profile directory.');
-  return { target, options, help, version, list, directories };
+  return { target, options, help, version, list, directories, completion };
 }

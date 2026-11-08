@@ -12,11 +12,12 @@ import { prepareSource, prepareBundle } from './prepare.mjs';
 import { BridgeDecoder } from './bridge.mjs';
 import { exportProfileSession, installProfileSnapshot } from './profile-import.mjs';
 import { canceledDialog } from './dialog.mjs';
+import { electronFramework } from './bundle.mjs';
 
 const require = createRequire(import.meta.url);
 const bootstrap = fileURLToPath(new URL('./bootstrap.cjs', import.meta.url));
 
-export function resolveApp(target, runtime) {
+export async function resolveApp(target, runtime) {
   const absolute = fs.realpathSync(path.resolve(target));
   if (absolute.endsWith('.app') && fs.statSync(absolute).isDirectory()) {
     const executable = execFileSync(
@@ -24,8 +25,7 @@ export function resolveApp(target, runtime) {
       ['-c', 'Print :CFBundleExecutable', path.join(absolute, 'Contents/Info.plist')],
       { encoding: 'utf8' },
     ).trim();
-    const framework = path.join(absolute, 'Contents/Frameworks/Electron Framework.framework');
-    if (!fs.existsSync(framework))
+    if (!(await electronFramework(absolute)))
       throw new Error('This bundle does not contain an Electron Framework.');
     return {
       executable: path.join(absolute, 'Contents/MacOS', executable),
@@ -88,7 +88,7 @@ export class Session extends EventEmitter {
     const profileInfo = JSON.parse(fs.readFileSync(this.profileMarker, 'utf8'));
     if (profileInfo.owner !== 'terminal-electron')
       throw new Error('Invalid terminal-electron profile marker.');
-    let command = resolveApp(this.target, this.options.electron);
+    let command = await resolveApp(this.target, this.options.electron);
     const original = fs.realpathSync(path.resolve(this.target));
     let wrapped = false;
     if (fs.statSync(original).isDirectory() && !this.options.inspector) {
@@ -105,7 +105,7 @@ export class Session extends EventEmitter {
         this.preparedCached = staged.cached;
         this.credentialName = staged.credentialName;
         this.protocolSchemes = staged.protocolSchemes;
-        command = resolveApp(staged.path);
+        command = await resolveApp(staged.path);
       } else {
         this.preparedPath = path.join(this.directory, 'entry');
         command.args = [prepareSource(original, this.directory)];

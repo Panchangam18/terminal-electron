@@ -49,3 +49,6 @@ mv -f "$temporary_link" "$launcher"; temporary_link=''
 echo "Installed terminal-electron $version: $launcher"
 case ":$PATH:" in *":$install_prefix/bin:"*) echo 'Run: terminal-electron' ;; *) echo "Add $install_prefix/bin to PATH, or run: \"$launcher\"" ;; esac
 echo 'Run terminal-electron to choose an app, or terminal-electron "/path/to/App.app".'
+mkdir -p "$install_prefix/share/zsh/site-functions"
+cp "$destination/app/src/completion.zsh" "$install_prefix/share/zsh/site-functions/_terminal-electron"
+echo 'Optional zsh Tab completion: source <(terminal-electron --completion zsh)'

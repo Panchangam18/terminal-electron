@@ -16,6 +16,10 @@ try {
   process.exit(1);
 }
 const { options, help, version, list, directories } = parsed;
+if (parsed.completion) {
+  process.stdout.write(readFileSync(new URL('./completion.zsh', import.meta.url), 'utf8'));
+  process.exit(0);
+}
 if (version) {
   console.log(
     JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version,
@@ -29,6 +33,7 @@ Run without a path to choose from installed Electron apps.
 
   --list                 List discovered Electron apps without launching
   --app-dir PATH         Include another folder when discovering apps
+  --completion zsh       Print native zsh Tab-completion setup
   --profile PATH         Use a persistent profile (default: isolated temporary profile)
   --import-profile PATH  Import a desktop Chromium session into a new --profile
   --electron PATH        Electron executable for a source app

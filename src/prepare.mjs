@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { extractAll, createPackageWithOptions } from '@electron/asar';
 import { flipFuses, FuseVersion, FuseV1Options } from '@electron/fuses';
+import { electronFramework } from './bundle.mjs';
 
 const bootstrap = fileURLToPath(new URL('./bootstrap.cjs', import.meta.url));
 
@@ -197,7 +198,10 @@ async function stageBundle(original, directory, finalBundle) {
   if (archived) {
     fs.rmSync(appDirectory + '.unpacked', { recursive: true, force: true });
     await createPackageWithOptions(editingDirectory, appDirectory, { unpack: '{*,.*}' });
-    await flipFuses(staged, {
+    const framework = await electronFramework(staged);
+    if (!framework)
+      throw new Error('Could not identify the Electron framework in the private bundle.');
+    await flipFuses(framework.binary, {
       version: FuseVersion.V1,
       [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
     });

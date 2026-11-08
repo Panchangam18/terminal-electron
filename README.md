@@ -15,9 +15,17 @@ Run **`terminal-electron`** to search and choose from the Electron apps on your 
 terminal-electron "/Applications/Slack.app"
 ```
 
-The picker reads application metadata and looks for the Electron framework. It checks standard Applications folders, the current directory, and Spotlight's app index, without launching apps during discovery. Type to filter, use Up/Down or the mouse, then Enter to launch; Escape cancels. `terminal-electron --list` lists paths without opening the picker, and `--app-dir PATH` includes an additional folder.
+The selector reads application metadata and recognizes standard or renamed Electron frameworks. It checks standard Applications folders, the current directory, and Spotlight's app index, without launching apps during discovery. Suggestions appear inline beneath the command, using ordinary terminal text. Type to filter, use Tab/Shift+Tab or Up/Down, then Enter to launch; Escape cancels. Scrollback stays visible. `terminal-electron --list` lists paths without opening the picker, and `--app-dir PATH` includes an additional folder.
 
 The prebuilt release requires **Apple Silicon macOS 14+** and Ghostty or Kitty with Kitty graphics support. Apps are not bundled. Pixel 0.0.20 supplies the compositor, terminal protocol, and input handling. Optional desktop-auth import currently requires Python 3.
+
+For actual zsh completion after typing `terminal-electron ` and pressing Tab, enable it in your shell:
+
+```sh
+source <(terminal-electron --completion zsh)
+```
+
+The installer also provides `~/.local/share/zsh/site-functions/_terminal-electron`. Shell startup files are not edited automatically.
 
 ## Keep a session
 
@@ -78,7 +86,7 @@ git clone https://github.com/Panchangam18/terminal-electron.git
 cd terminal-electron
 npm ci
 npm run setup        # install dependencies and development Electron for fixtures
-npm test             # 12 integration/framing/discovery tests
+npm test             # 13 integration/framing/discovery tests
 npm run test:pty      # full CLI, terminal input, graphics, backend file save
 npm run test:pty-hidpi
 npm run test:dialogs
