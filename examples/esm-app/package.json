@@ -1,0 +1,6 @@
+{
+  "name": "terminal-electron-esm-proof",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.mjs"
+}

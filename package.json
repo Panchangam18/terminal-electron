@@ -1,0 +1,47 @@
+{
+  "name": "terminal-electron",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "terminal-electron": "src/cli.mjs"
+  },
+  "scripts": {
+    "setup": "npm install && node node_modules/electron/install.js",
+    "start": "node src/cli.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:pty": "python3 test/pty_smoke.py",
+    "test:vscode": "node test/vscode_smoke.mjs",
+    "test:slack": "node test/slack_smoke.mjs",
+    "test:slack-pty": "python3 test/slack_pty.py",
+    "test:slack-readonly": "node test/slack_readonly.mjs",
+    "test:obsidian": "node test/obsidian_deep.mjs",
+    "test:screenstudio": "node test/screenstudio_deep.mjs",
+    "test:vscode-deep": "node test/vscode_deep.mjs",
+    "demo": "node src/cli.mjs examples/ipc-app",
+    "test:pty-hidpi": "python3 test/pty_smoke.py --hi-dpi",
+    "test:dialogs": "python3 test/dialog_pty.py",
+    "test:composite": "node test/composite_smoke.mjs",
+    "test:slack-reliability": "node test/slack_reliability.mjs",
+    "format": "prettier --write src test examples docs README.md package.json .prettierrc.json",
+    "format:check": "prettier --check src test examples docs README.md package.json .prettierrc.json"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "prettier": "3.6.2"
+  },
+  "dependencies": {
+    "@electron/asar": "^4.3.1",
+    "@electron/fuses": "^2.1.3",
+    "@zenbu-labs/pixel": "0.0.20"
+  },
+  "description": "Run local Electron apps inside a graphics terminal using their original runtime and Pixel.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Panchangam18/terminal-electron.git"
+  }
+}

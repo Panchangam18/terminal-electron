@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+slack_target=${TERMINAL_ELECTRON_SLACK_APP:-/Applications/Slack.app}
+if [ -z "${TERMINAL_ELECTRON_SLACK_APP:-}" ] && [ ! -d "$slack_target" ]; then
+  slack_target="$script_dir/../Slack.app"
+fi
+if [ ! -d "$slack_target" ]; then
+  echo 'Install Slack or set TERMINAL_ELECTRON_SLACK_APP to its .app path.' >&2
+  exit 1
+fi
+exec "$script_dir/terminal-electron" "$slack_target" --profile "${TERMINAL_ELECTRON_SLACK_PROFILE:-$script_dir/profiles/slack-private}" "$@"

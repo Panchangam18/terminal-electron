@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Electron, inside your terminal</title>
+<style>
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    background: #10151d;
+    color: #e8edf4;
+    font: 17px system-ui;
+    padding: 42px;
+  }
+  .tag {
+    color: #90dfba;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+  }
+  h1 {
+    font-size: 38px;
+    font-weight: 550;
+    margin-bottom: 12px;
+  }
+  p {
+    color: #a8b4c5;
+    line-height: 1.6;
+    max-width: 650px;
+  }
+  textarea {
+    width: 100%;
+    height: 140px;
+    border: 1px solid #405066;
+    border-radius: 10px;
+    background: #18212e;
+    color: white;
+    padding: 16px;
+    font: 18px system-ui;
+  }
+  button {
+    border: 0;
+    border-radius: 8px;
+    padding: 13px 18px;
+    margin: 16px 8px 0 0;
+    background: #91dfba;
+    color: #10251c;
+    font: 600 15px system-ui;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: #263448;
+    color: #dce7f6;
+  }
+  #status {
+    color: #91dfba;
+    font:
+      14px ui-monospace,
+      monospace;
+    white-space: pre-wrap;
+  }
+  section {
+    margin-top: 60px;
+    border-top: 1px solid #304055;
+    padding-top: 24px;
+  }
+</style>
+<div class="tag">TERMINAL ELECTRON · LOCAL RUNTIME</div>
+<h1>Your app. In this pane.</h1>
+<p>
+  This is an ordinary Electron app. Its original main process, preload bridge, IPC handlers, and
+  filesystem access are running locally.
+</p>
+<textarea id="note" placeholder="Type a note here…"></textarea>
+<div>
+  <button id="increment">Call main process</button
+  ><button id="save" class="secondary">Save note to disk</button
+  ><button id="second" class="secondary">Second window</button>
+</div>
+<p id="status">Waiting for an action.</p>
+<section>
+  <h2>Scroll works here, too.</h2>
+  <p>The terminal supplies input. Electron renders the original interface offscreen.</p>
+</section>
+<section>
+  <h2>Resize the terminal.</h2>
+  <p>The app’s viewport follows the pane.</p>
+</section>
+<section>
+  <h2>Everything runs on this machine.</h2>
+  <p>No web-hosted edition of the app is involved.</p>
+</section>
+<script>
+  increment.onclick = async () => {
+    const r = await desktop.increment();
+    statusText(`Main process: ${r.pid} · Electron ${r.electron}\nIPC counter: ${r.count}`);
+  };
+  save.onclick = async () =>
+    statusText(`Saved by the main process:\n${await desktop.save(note.value)}`);
+  second.onclick = () => desktop.secondWindow();
+  function statusText(text) {
+    document.getElementById('status').textContent = text;
+  }
+</script>

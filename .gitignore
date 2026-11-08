@@ -1,0 +1,27 @@
+# Dependencies and generated local state.
+node_modules/
+profiles/
+proof/
+work/
+.local/
+coverage/
+__pycache__/
+*.py[cod]
+*.log
+.DS_Store
+
+# App bundles, installers, and credentials never belong in source control.
+*.app/
+*.dmg
+*.exe
+*.zip
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Preserved machine-local launcher for the earlier manual-login test profile.
+/run-slack-signed-in
