@@ -46,6 +46,8 @@ Prepared apps use a stable, private `Terminal Electron … Safe Storage` credent
 
 This supports Chromium cookie/profile authentication. It does not migrate arbitrary native credential stores, saved passwords, or partitioned cookies. Applications may still require sign-in when their authentication depends on other platform-specific mechanisms.
 
+The original app must be able to read its existing credential store. Import is explicit and is never retried automatically. If cookie access times out, cleanup first requests normal termination and then kills only processes using the unique snapshot profile if necessary. The source desktop instance and other app sessions are preserved. Startup progress is shown in the CLI, and a private log exists even when preparation or import fails.
+
 ## Runtime policy
 
 Use Electron APIs, runtime capabilities, bundle metadata, and platform rules. Do not add app-name/bundle-ID branches, app DOM selectors, or bespoke app adapters to `src/`. Application-specific UI tests and convenience scripts belong outside the runtime. Keep compatibility claims limited to actual checks.

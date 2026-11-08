@@ -3,6 +3,8 @@
 Run a local Electron app inside Ghostty or Kitty, with its original desktop runtime, backend, preloads, native modules, and IPC.
 
 ```sh
+git clone https://github.com/Panchangam18/terminal-electron.git
+cd terminal-electron
 npm ci
 ./terminal-electron "/Applications/Slack.app"
 ```
@@ -25,7 +27,7 @@ To reuse desktop authentication:
   --import-profile "$HOME/Library/Application Support/Slack"
 ```
 
-Import snapshots the desktop profile, uses the unchanged signed app to export its browser cookies, then imports them into the private profile. Saved passwords are excluded. This supports Chromium cookie/profile authentication; custom credential stores and partitioned cookies are not covered. [Authentication details](docs/architecture.md#authentication).
+Import snapshots the desktop profile, uses the unchanged signed app to export its browser cookies, then imports them into the private profile. Saved passwords are excluded. This supports Chromium cookie/profile authentication; custom credential stores and partitioned cookies are not covered. The source app still needs access to its existing credential store. If cookie access times out, the temporary helper is stopped and the import fails without changing the desktop profile; start a private session without `--import-profile` and sign in there. [Authentication details](docs/architecture.md#authentication).
 
 Convenience launchers:
 
@@ -65,7 +67,7 @@ See [architecture](docs/architecture.md) for signing, input, window, and authent
 
 ```sh
 npm run setup        # install dependencies and development Electron for fixtures
-npm test             # 9 integration/framing tests
+npm test             # 10 integration/framing tests
 npm run test:pty      # full CLI, terminal input, graphics, backend file save
 npm run test:pty-hidpi
 npm run test:dialogs

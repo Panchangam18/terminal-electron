@@ -60,6 +60,7 @@ export class Session extends EventEmitter {
     this.dialogSocketPath = path.join(this.directory, 'dialog.sock');
     this.dialogConnections = new Set();
     this.logPath = options.log ?? path.join(this.directory, 'app.log');
+    fs.closeSync(fs.openSync(this.logPath, 'a', 0o600));
     this.profile = options.profile
       ? path.resolve(options.profile)
       : path.join(this.directory, 'profile');
@@ -75,6 +76,10 @@ export class Session extends EventEmitter {
     this.closed = false;
     this.stopping = false;
   }
+  progress(stage, message) {
+    fs.appendFileSync(this.logPath, message + '\n');
+    this.emit('progress', { stage, message });
+  }
   async start() {
     if (!fs.existsSync(this.profileMarker))
       throw new Error(
@@ -88,6 +93,7 @@ export class Session extends EventEmitter {
     let wrapped = false;
     if (fs.statSync(original).isDirectory() && !this.options.inspector) {
       if (original.endsWith('.app')) {
+        this.progress('preparing', 'Checking and preparing the private app runtime…');
         const staged = await prepareBundle(
           original,
           this.directory,
@@ -121,6 +127,7 @@ export class Session extends EventEmitter {
         .filter((name) => name !== '.terminal-electron-profile.json');
       if (entries.length)
         throw new Error('Session import requires a new empty --profile directory.');
+      this.progress('importing', 'Importing the desktop browser session into the new profile…');
       const snapshot = await exportProfileSession(
         original,
         this.options.importProfile,
@@ -233,6 +240,7 @@ export class Session extends EventEmitter {
       pixelInput: path.join(pixelPackage, 'dist/web/input.js'),
     };
     if (wrapped) env.TERMINAL_ELECTRON_BOOTSTRAP = JSON.stringify(config);
+    this.progress('launching', 'Opening the app in the terminal…');
     this.child = spawn(
       command.executable,
       [

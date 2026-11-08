@@ -12,7 +12,7 @@ npm run test:dialogs
 npm run format:check
 ```
 
-The nine core tests cover binary/Unicode framing, invalid bitmap lengths, unmanaged-profile refusal, input/IPC/filesystem behavior, hidden utility windows, named ESM imports, packaged ASAR/signing/native helpers, sync/async dialogs, and encrypted desktop-auth import. The ordinary input test delays native paste to detect premature clipboard restoration and out-of-order Enter.
+The ten core tests cover binary/Unicode framing, invalid bitmap lengths, unmanaged-profile refusal, input/IPC/filesystem behavior, hidden utility windows, named ESM imports, packaged ASAR/signing/native helpers, sync/async dialogs, encrypted desktop-auth import, and bounded cleanup of an unresponsive import helper while preserving unrelated instances. The ordinary input test delays native paste to detect premature clipboard restoration and out-of-order Enter.
 
 PTY tests start the production CLI, reconstruct Pixel graphics packets, send real terminal input, verify files saved by the original app backend, and check clean shutdown. The high-DPI test requires actual 2000x1400 source bitmaps displayed at 1000x700. The dialog PTY test selects a Unicode folder through the shared synchronous picker.
 
@@ -55,6 +55,8 @@ Create the signed-in Slack profile with `./run-slack-desktop` first. Close the t
 | Composite 1.0.3          | 37.4.0           | Startup, loaded UI, hidden offscreen window, quit                                                                                                                                                        | Deeper workflows                                                                                                        |
 
 The user confirmed signed-in Slack works in live Ghostty. Automated terminal checks use PTYs and decoded graphics; other live terminal/app combinations have not been established.
+
+A newcomer check cloned the repository into a path containing spaces, downloaded and checksum-verified Node 22.12.0, installed with an empty npm cache, and launched Slack through the production terminal CLI without downloading development Electron. Plain launch, resize, and clean shutdown passed. Desktop-auth import had previously passed, but a later fresh-profile run timed out reading the desktop cookies. Import remains optional and dependent on source credential access; the failure cleanup is regression tested. This check uses the same Mac, not a separate clean machine or a newly controlled Ghostty session.
 
 These results are scoped observations, not universal compatibility guarantees. Native menus/tray, drag-and-drop, security/TCC prompts, OS protocol invocation, BaseWindow/WebContentsView, and other operating systems need further support or verification.
 

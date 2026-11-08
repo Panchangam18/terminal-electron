@@ -53,11 +53,39 @@ for source,destination in json.loads(sys.argv[1]):
 
 function ownedProcesses(profile) {
   const result = spawnSync('/bin/ps', ['-axo', 'pid=,args='], { encoding: 'utf8' });
+  const flags = [`--user-data-dir=${profile}`, `--database=${path.join(profile, 'Crashpad')}`];
   return (result.stdout ?? '')
     .split('\n')
-    .filter((line) => line.includes(`--user-data-dir=${profile}`) && !line.includes('/bin/ps'))
+    .filter(
+      (line) =>
+        !line.includes('/bin/ps') &&
+        flags.some((flag) => {
+          const index = line.indexOf(flag);
+          const end = index + flag.length;
+          return index >= 0 && (end === line.length || /\s/.test(line[end]));
+        }),
+    )
     .map((line) => Number(line.trim().split(/\s+/)[0]))
     .filter(Number.isInteger);
+}
+
+export async function stopProfileProcesses(profile, { graceMs = 1500 } = {}) {
+  const signalOwned = (signal) => {
+    for (const pid of ownedProcesses(profile))
+      try {
+        process.kill(pid, signal);
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error;
+      }
+  };
+  signalOwned('SIGTERM');
+  const deadline = Date.now() + graceMs;
+  while (ownedProcesses(profile).length && Date.now() < deadline) await pause(50);
+  signalOwned('SIGKILL');
+  const killedDeadline = Date.now() + 1000;
+  while (ownedProcesses(profile).length && Date.now() < killedDeadline) await pause(50);
+  if (ownedProcesses(profile).length)
+    throw new Error('The temporary session-import app did not stop.');
 }
 
 export async function exportProfileSession(target, source, directory) {
@@ -115,13 +143,16 @@ export async function exportProfileSession(target, source, directory) {
     for (let i = 0; i < 40 && ownedProcesses(profile).length; i++) await pause(100);
     exported = true;
     return { profile, cookies };
+  } catch (error) {
+    if (error.message === 'Inspector timed out: Storage.getCookies')
+      throw new Error(
+        'Desktop session import timed out reading cookies. The temporary app will be stopped. You can launch with a new private profile and sign in instead.',
+        { cause: error },
+      );
+    throw error;
   } finally {
     client?.close();
-    for (const pid of ownedProcesses(profile))
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {}
-    await pause(100);
+    await stopProfileProcesses(profile);
     if (!exported) fs.rmSync(profile, { recursive: true, force: true });
   }
 }

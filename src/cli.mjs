@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Session } from './session.mjs';
 import { Terminal } from './pixel.mjs';
+import { appendFileSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 if (!args.length || args.includes('--help')) {
@@ -45,6 +46,9 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 const session = new Session(target, options);
 let terminal;
 let failed = false;
+session.on('progress', ({ message }) => {
+  if (!terminal) console.log(message);
+});
 session.on('app-error', (error) => {
   failed = true;
   console.error(error.message);
@@ -74,6 +78,7 @@ try {
   await exited;
 } catch (error) {
   failed = true;
+  appendFileSync(session.logPath, (error.stack ?? error.message) + '\n');
   console.error(error.message);
 } finally {
   terminal?.stop();
