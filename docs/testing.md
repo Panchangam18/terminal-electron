@@ -9,10 +9,11 @@ npm test
 npm run test:pty
 npm run test:pty-hidpi
 npm run test:dialogs
+npm run test:picker
 npm run format:check
 ```
 
-The ten core tests cover binary/Unicode framing, invalid bitmap lengths, unmanaged-profile refusal, input/IPC/filesystem behavior, hidden utility windows, named ESM imports, packaged ASAR/signing/native helpers, sync/async dialogs, encrypted desktop-auth import, and bounded cleanup of an unresponsive import helper while preserving unrelated instances. The ordinary input test delays native paste to detect premature clipboard restoration and out-of-order Enter.
+The twelve core tests cover binary/Unicode framing, invalid bitmap lengths, unmanaged-profile refusal, input/IPC/filesystem behavior, hidden utility windows, named ESM imports, packaged ASAR/signing/native helpers, sync/async dialogs, encrypted desktop-auth import, and bounded cleanup of an unresponsive import helper while preserving unrelated instances. The ordinary input test delays native paste to detect premature clipboard restoration and out-of-order Enter.
 
 PTY tests start the production CLI, reconstruct Pixel graphics packets, send real terminal input, verify files saved by the original app backend, and check clean shutdown. The high-DPI test requires actual 2000x1400 source bitmaps displayed at 1000x700. The dialog PTY test selects a Unicode folder through the shared synchronous picker.
 
@@ -56,10 +57,18 @@ Create the signed-in Slack profile with `./run-slack-desktop` first. Close the t
 
 The user confirmed signed-in Slack works in live Ghostty. Automated terminal checks use PTYs and decoded graphics; other live terminal/app combinations have not been established.
 
-A newcomer check anonymously cloned the public repository into a path containing spaces, downloaded and checksum-verified Node 22.12.0, installed with an empty npm cache, and launched Slack through the production terminal CLI without downloading development Electron. Plain launch, resize, clean shutdown, and restart passed. A production-only install with no Node Electron package also passed. Developer setup, all ten core tests, standard/2x CLI tests, and the synchronous terminal picker passed from that checkout. Desktop-auth import had previously passed, but a later fresh-profile run timed out reading the desktop cookies. Import remains optional and dependent on source credential access; the failure cleanup is regression tested. This check uses the same Mac, not a separate clean machine or a newly controlled Ghostty session.
+A newcomer check anonymously cloned the public repository into a path containing spaces, downloaded and checksum-verified Node 22.12.0, installed with an empty npm cache, and launched Slack through the production terminal CLI without downloading development Electron. Plain launch, resize, clean shutdown, and restart passed. A production-only install with no Node Electron package also passed. Developer setup, all twelve core tests, standard/2x CLI tests, and the synchronous terminal picker passed from that checkout. Desktop-auth import had previously passed, but a later fresh-profile run timed out reading the desktop cookies. Import remains optional and dependent on source credential access; the failure cleanup is regression tested. This check uses the same Mac, not a separate clean machine or a newly controlled Ghostty session.
 
 These results are scoped observations, not universal compatibility guarantees. Native menus/tray, drag-and-drop, security/TCC prompts, OS protocol invocation, BaseWindow/WebContentsView, and other operating systems need further support or verification.
 
 ## Local artifacts
 
 Tests write JSON results, screenshots, and transcripts to `proof/`. CLI sessions print their retained log and profile paths. These can contain account information and are intentionally excluded from Git, alongside `profiles/`, app bundles, credentials, and caches. The repository contains source, fixtures, and the coverage summary rather than personal session data.
+
+## Prebuilt install and app picker
+
+The release installer follows terminal-mac's layout: a checksum-verified release ZIP, an immutable versioned runtime under `~/.local/lib/terminal-electron`, and one launcher in `~/.local/bin`. Updates retain old versions so an existing prepared runtime and credential identity are not silently replaced. The payload includes Node and production dependencies, but no desktop apps, user profiles, or account data. Shell configuration is not edited.
+
+`npm run test:picker` creates a packaged Electron fixture and uses the production CLI on a real PTY. It searches the app picker, launches only that fixture, waits for original app frames, quits, and checks cancellation without starting an app. `TERMINAL_ELECTRON_TEST_COMMAND` selects an installed launcher; `TERMINAL_ELECTRON_TEST_PATH` can restrict the child PATH to system tools to verify that no global Node is needed. Discovery tests cover nested apps, aliases, cycles, native-app exclusion, and prepared-copy exclusion.
+
+Maintainers build release assets with `npm run build:release`. This downloads a pinned Node distribution from nodejs.org, verifies its upstream checksum, installs production dependencies from the lockfile, and packages only the distribution payload. The generated `dist/get.sh` pins the release archive's SHA-256. Test the extracted `install.sh` with a temporary `--prefix` before publishing. The installer refuses to replace an unrelated executable and validates its payload on repeated installation.

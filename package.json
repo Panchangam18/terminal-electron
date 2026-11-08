@@ -1,6 +1,6 @@
 {
   "name": "terminal-electron",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -24,7 +24,9 @@
     "test:composite": "node test/composite_smoke.mjs",
     "test:slack-reliability": "node test/slack_reliability.mjs",
     "format": "prettier --write src test examples docs README.md package.json .prettierrc.json",
-    "format:check": "prettier --check src test examples docs README.md package.json .prettierrc.json"
+    "format:check": "prettier --check src test examples docs README.md package.json .prettierrc.json",
+    "build:release": "bash scripts/build-release.sh",
+    "test:picker": "python3 test/picker_pty.py"
   },
   "engines": {
     "node": ">=22.12"

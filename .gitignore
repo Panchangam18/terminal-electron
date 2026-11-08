@@ -5,6 +5,7 @@ proof/
 work/
 .local/
 coverage/
+dist/
 __pycache__/
 *.py[cod]
 *.log

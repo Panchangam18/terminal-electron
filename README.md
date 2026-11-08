@@ -3,18 +3,26 @@
 Run a local Electron app inside Ghostty or Kitty, with its original desktop runtime, backend, preloads, native modules, and IPC.
 
 ```sh
-git clone https://github.com/Panchangam18/terminal-electron.git
-cd terminal-electron
-npm ci
-./terminal-electron "/Applications/Slack.app"
+curl -fsSL https://github.com/Panchangam18/terminal-electron/releases/latest/download/get.sh | bash
+terminal-electron
 ```
 
-Requires **macOS**, **Node.js 22.12+**, and a terminal with Kitty graphics support. Tested on Apple Silicon. Pixel 0.0.20 supplies the compositor, terminal protocol, and input handling. Apps are not bundled with this repository.
+The installer verifies the release checksum, bundles Node and production dependencies under `~/.local/lib/terminal-electron`, and places a launcher in `~/.local/bin`. It needs no Git, npm, separate Node install, compiler, or administrator rights. Add `~/.local/bin` to PATH if your shell does not already include it; the installer does not edit shell configuration. A custom prefix is supported with `| bash -s -- --prefix /absolute/path`.
+
+Run **`terminal-electron`** to search and choose from the Electron apps on your computer, or launch one directly:
+
+```sh
+terminal-electron "/Applications/Slack.app"
+```
+
+The picker reads application metadata and looks for the Electron framework. It checks standard Applications folders, the current directory, and Spotlight's app index, without launching apps during discovery. Type to filter, use Up/Down or the mouse, then Enter to launch; Escape cancels. `terminal-electron --list` lists paths without opening the picker, and `--app-dir PATH` includes an additional folder.
+
+The prebuilt release requires **Apple Silicon macOS 14+** and Ghostty or Kitty with Kitty graphics support. Apps are not bundled. Pixel 0.0.20 supplies the compositor, terminal protocol, and input handling. Optional desktop-auth import currently requires Python 3.
 
 ## Keep a session
 
 ```sh
-./terminal-electron "/Applications/Slack.app" --profile ./profiles/slack
+terminal-electron "/Applications/Slack.app" --profile ./profiles/slack
 ```
 
 Use an empty directory for the first launch. The launcher prepares a cached, privately signed copy of the app and uses a separate credential identity. The original app and desktop profile are preserved. Profiles are pinned to their prepared runtime; an app update requires a new profile.
@@ -22,14 +30,14 @@ Use an empty directory for the first launch. The launcher prepares a cached, pri
 To reuse desktop authentication:
 
 ```sh
-./terminal-electron "/Applications/Slack.app" \
+terminal-electron "/Applications/Slack.app" \
   --profile ./profiles/slack-desktop \
   --import-profile "$HOME/Library/Application Support/Slack"
 ```
 
 Import snapshots the desktop profile, uses the unchanged signed app to export its browser cookies, then imports them into the private profile. Saved passwords are excluded. This supports Chromium cookie/profile authentication; custom credential stores and partitioned cookies are not covered. The source app still needs access to its existing credential store. If cookie access times out, the temporary helper is stopped and the import fails without changing the desktop profile; start a private session without `--import-profile` and sign in there. [Authentication details](docs/architecture.md#authentication).
 
-Convenience launchers:
+The source checkout also includes optional Slack test launchers (these are not part of the installed command):
 
 ```sh
 ./run-slack           # separate private profile
@@ -48,7 +56,7 @@ Set `TERMINAL_ELECTRON_SLACK_APP` for a custom Slack bundle path, `TERMINAL_ELEC
 | Mouse, wheel, keyboard, bracketed paste | Forward to Electron                      |
 | Ctrl+L / Escape in a file dialog        | Edit the path / cancel                   |
 
-Terminal shortcuts can intercept keys before they reach the app. Logs and profile paths are printed at startup. Run `./terminal-electron --help` for options, including `--fps` and arguments forwarded after `--`.
+Terminal shortcuts can intercept keys before they reach the app. Logs and profile paths are printed at startup. Run `terminal-electron --help` for options, including `--fps` and arguments forwarded after `--`.
 
 ## How it works
 
@@ -66,14 +74,20 @@ See [architecture](docs/architecture.md) for signing, input, window, and authent
 ## Development and verification
 
 ```sh
+git clone https://github.com/Panchangam18/terminal-electron.git
+cd terminal-electron
+npm ci
 npm run setup        # install dependencies and development Electron for fixtures
-npm test             # 10 integration/framing tests
+npm test             # 12 integration/framing/discovery tests
 npm run test:pty      # full CLI, terminal input, graphics, backend file save
 npm run test:pty-hidpi
 npm run test:dialogs
+npm run test:picker
 npm run format:check
 npm run demo
 ```
+
+Source development requires Node.js 22.12+ and Python 3 for PTY tests/import. Use `./terminal-electron` when running directly from the checkout.
 
 Dependency install scripts are disabled in `.npmrc`: packaged apps supply their own Electron. `npm run setup` explicitly installs the fixture runtime. Python 3 is required for PTY tests and profile import.
 

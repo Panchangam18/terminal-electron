@@ -3,45 +3,71 @@ import { Session } from './session.mjs';
 import { Terminal } from './pixel.mjs';
 import { appendFileSync } from 'node:fs';
 
-const args = process.argv.slice(2);
-if (!args.length || args.includes('--help')) {
-  console.log(`Usage: terminal-electron <App.app | source-directory | executable> [options] [-- app-arguments]
+import { readFileSync } from 'node:fs';
+import { discoverApplications } from './discover.mjs';
+import { chooseApplication } from './picker.mjs';
+import { parseArguments } from './options.mjs';
 
-  --electron PATH   Electron executable for a source app
-  --profile PATH    Use a persistent profile (default: isolated temporary profile)
+let parsed;
+try {
+  parsed = parseArguments(process.argv.slice(2));
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
+const { options, help, version, list, directories } = parsed;
+if (version) {
+  console.log(
+    JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version,
+  );
+  process.exit(0);
+}
+if (help) {
+  console.log(`Usage: terminal-electron [App.app | source-directory | executable] [options] [-- app-arguments]
+
+Run without a path to choose from installed Electron apps.
+
+  --list                 List discovered Electron apps without launching
+  --app-dir PATH         Include another folder when discovering apps
+  --profile PATH         Use a persistent profile (default: isolated temporary profile)
   --import-profile PATH  Import a desktop Chromium session into a new --profile
-  --fps NUMBER      Maximum frame rate, 1–60 (default: 15)
+  --electron PATH        Electron executable for a source app
+  --fps NUMBER           Maximum frame rate, 1–60 (default: 15)
+  --version              Show version
+  --help                 Show help
 
-Requires Node.js 22.12+ and a Kitty-graphics terminal such as Ghostty or Kitty.
+Requires macOS and a Kitty-graphics terminal such as Ghostty or Kitty.
 Ctrl+Q exits; Ctrl+Tab switches windows; Ctrl+Shift+W closes a window.
-macOS bundles run from a private, ad-hoc-signed copy with an entry shim.
-Private copies and credential identities are reused; existing vendor profiles are refused.
+Prepared private bundles and credential identities are reused.
 The installed app is unchanged. App output goes to a session log.`);
   process.exit(0);
 }
-const target = args.shift();
-const options = { args: [], frameFormat: 'bgra' };
-while (args.length) {
-  const option = args.shift();
-  if (option === '--') {
-    options.args = args;
-    break;
-  }
-  if (option === '--profile' || option === '--electron') options[option.slice(2)] = args.shift();
-  else if (option === '--import-profile') options.importProfile = args.shift();
-  else if (option === '--fps') options.fps = Number(args.shift());
-  else throw new Error(`Unknown option: ${option}. Pass app arguments after --.`);
+if (list) {
+  for (const app of await discoverApplications({ directories }))
+    console.log(app.name + '\t' + app.path);
+  process.exit(0);
 }
-if (
-  options.fps !== undefined &&
-  (!Number.isInteger(options.fps) || options.fps < 1 || options.fps > 60)
-)
-  throw new Error('--fps must be an integer between 1 and 60.');
-if (options.importProfile && !options.profile)
-  throw new Error('--import-profile requires a new --profile directory.');
 if (!process.stdin.isTTY || !process.stdout.isTTY) {
-  console.error('Run this command in an interactive Ghostty or Kitty terminal.');
+  console.error('Run this command in an interactive Ghostty or Kitty terminal, or use --list.');
   process.exit(1);
+}
+let target = parsed.target;
+if (!target) {
+  try {
+    console.log('Finding installed Electron apps…');
+    const apps = await discoverApplications({ directories });
+    if (!apps.length) {
+      console.error(
+        'No Electron apps found. Pass an .app path directly, or add a folder with --app-dir PATH.',
+      );
+      process.exit(1);
+    }
+    target = await chooseApplication(apps);
+    if (!target) process.exit(0);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
 }
 const session = new Session(target, options);
 let terminal;
