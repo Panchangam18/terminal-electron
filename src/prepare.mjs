@@ -3,9 +3,10 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { extractAll, createPackageWithOptions } from '@electron/asar';
+import { extractFile } from '@electron/asar';
 import { flipFuses, FuseVersion, FuseV1Options } from '@electron/fuses';
 import { electronFramework } from './bundle.mjs';
+import { patchArchive } from './archive.mjs';
 
 const bootstrap = fileURLToPath(new URL('./bootstrap.cjs', import.meta.url));
 
@@ -70,6 +71,7 @@ export async function prepareBundle(
   directory,
   cacheRoot = fileURLToPath(new URL('../profiles/runtimes/', import.meta.url)),
   profile = {},
+  progress = () => {},
 ) {
   cacheRoot = path.resolve(cacheRoot);
   const sourceHash = createHash('sha256').update(original);
@@ -104,6 +106,7 @@ export async function prepareBundle(
       throw new Error(
         'The source app changed; use a new private profile to upgrade without changing the previous credential identity.',
       );
+    progress('Using the saved private runtime…');
     return validateRuntime(profile.runtime);
   }
   if (profile.credentialName === `Terminal Electron ${legacyId}`) {
@@ -118,18 +121,20 @@ export async function prepareBundle(
     });
   }
   const id = createHash('sha256')
-    .update(JSON.stringify({ schema: 3, original, bootstrap, cacheRoot, sourceFingerprint }))
+    .update(JSON.stringify({ schema: 4, original, bootstrap, cacheRoot, sourceFingerprint }))
     .digest('hex')
     .slice(0, 24);
   const destination = path.join(cacheRoot, id);
   const bundle = path.join(destination, path.basename(original));
   const manifest = path.join(destination, 'runtime.json');
-  if (fs.existsSync(manifest) && fs.existsSync(bundle))
+  if (fs.existsSync(manifest) && fs.existsSync(bundle)) {
+    progress('Using the cached private runtime…');
     return validateRuntime(JSON.parse(fs.readFileSync(manifest, 'utf8')));
+  }
   fs.mkdirSync(cacheRoot, { recursive: true, mode: 0o700 });
   const staging = fs.mkdtempSync(path.join(cacheRoot, '.prepare-'));
   try {
-    await stageBundle(original, staging, bundle);
+    await stageBundle(original, staging, bundle, progress);
     const info = JSON.parse(
       execFileSync(
         '/usr/bin/plutil',
@@ -161,43 +166,34 @@ export async function prepareBundle(
   }
 }
 
-async function stageBundle(original, directory, finalBundle) {
+async function stageBundle(original, directory, finalBundle, progress) {
   const resources = path.join(original, 'Contents/Resources');
   const archived = fs.existsSync(path.join(resources, 'app.asar'));
   if (!archived && !fs.existsSync(path.join(resources, 'app/package.json')))
     throw new Error('No Electron app/package.json or app.asar was found in this bundle.');
   const staged = path.join(directory, path.basename(original));
+  progress('Copying the app into its private runtime…');
   execFileSync('/bin/cp', ['-cR', original, staged], { stdio: 'pipe' });
   const stagedResources = fs.realpathSync(path.join(staged, 'Contents/Resources'));
   const appDirectory = path.join(stagedResources, archived ? 'app.asar' : 'app');
-  const editingDirectory = archived ? path.join(directory, 'archive-source') : appDirectory;
-  if (archived) {
-    extractAll(appDirectory, editingDirectory);
-    const unpacked = appDirectory + '.unpacked';
-    if (fs.existsSync(unpacked))
-      fs.cpSync(unpacked, editingDirectory, {
-        recursive: true,
-        force: true,
-        preserveTimestamps: true,
-        verbatimSymlinks: true,
-      });
-  }
-  const packageFile = path.join(editingDirectory, 'package.json');
-  const pkg = JSON.parse(fs.readFileSync(packageFile, 'utf8'));
+  const pkg = JSON.parse(
+    archived
+      ? extractFile(appDirectory, 'package.json').toString()
+      : fs.readFileSync(path.join(appDirectory, 'package.json'), 'utf8'),
+  );
   const finalAppDirectory = path.join(
     finalBundle,
     'Contents/Resources',
     archived ? 'app.asar' : 'app',
   );
-  fs.writeFileSync(
-    path.join(editingDirectory, '.terminal-electron.cjs'),
-    entryCode(finalAppDirectory, pkg.main, pkg.type),
-  );
+  const entry = entryCode(finalAppDirectory, pkg.main, pkg.type);
   pkg.main = '.terminal-electron.cjs';
-  fs.writeFileSync(packageFile, JSON.stringify(pkg));
+  progress('Adding the terminal entry point…');
   if (archived) {
-    fs.rmSync(appDirectory + '.unpacked', { recursive: true, force: true });
-    await createPackageWithOptions(editingDirectory, appDirectory, { unpack: '{*,.*}' });
+    await patchArchive(appDirectory, {
+      'package.json': JSON.stringify(pkg),
+      '.terminal-electron.cjs': entry,
+    });
     const framework = await electronFramework(staged);
     if (!framework)
       throw new Error('Could not identify the Electron framework in the private bundle.');
@@ -205,18 +201,28 @@ async function stageBundle(original, directory, finalBundle) {
       version: FuseVersion.V1,
       [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false,
     });
-    fs.rmSync(editingDirectory, { recursive: true, force: true });
+  } else {
+    fs.writeFileSync(path.join(appDirectory, '.terminal-electron.cjs'), entry);
+    fs.writeFileSync(path.join(appDirectory, 'package.json'), JSON.stringify(pkg));
   }
+  progress('Signing and verifying the private runtime…');
   execFileSync(
     '/usr/bin/codesign',
     ['--force', '--deep', '--sign', '-', '--preserve-metadata=entitlements,flags,runtime', staged],
     { stdio: 'pipe' },
   );
-  const frameworks = path.join(staged, 'Contents/Frameworks');
-  const bundles = fs
-    .readdirSync(frameworks)
-    .filter((name) => name.endsWith('.app'))
-    .map((name) => path.join(frameworks, name));
+  // Some runtimes nest helper apps inside a versioned framework rather than
+  // beside it. Walk real directories only, and re-seal containers inside out.
+  const bundles = [];
+  function visit(root) {
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const child = path.join(root, entry.name);
+      visit(child);
+      if (/\.(app|framework|xpc|appex)$/.test(entry.name)) bundles.push(child);
+    }
+  }
+  visit(staged);
   for (const bundle of [...bundles, staged]) {
     const xml = execFileSync('/usr/bin/codesign', ['-d', '--entitlements', ':-', bundle], {
       encoding: 'utf8',

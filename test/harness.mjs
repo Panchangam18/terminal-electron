@@ -135,7 +135,11 @@ export class Harness extends Input {
   }
   hidden() {
     assert(this.windows?.windows.length);
-    assert(this.windows.windows.every((w) => w.offscreen && !w.nativeVisible));
+    assert(
+      this.windows.windows.every(
+        (w) => (w.offscreen || w.captureMode === 'capture') && !w.nativeVisible,
+      ),
+    );
   }
   async step(label, operation) {
     const start = Date.now();
@@ -169,13 +173,13 @@ export class Harness extends Input {
       ),
     );
   }
-  async quit() {
+  async quit(timeout = 5000) {
     while (this.dialog) this.dialog.cancel();
     const closed = new Promise((resolve) =>
       this.session.once('exit', (code, signal) => resolve({ code, signal })),
     );
     this.session.send({ type: 'quit' });
-    const timer = setTimeout(() => this.session.stop(), 5000);
+    const timer = setTimeout(() => this.session.stop(), timeout);
     try {
       const result = await closed;
       assert.equal(result.code, 0);

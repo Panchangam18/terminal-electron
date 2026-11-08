@@ -14,7 +14,10 @@ function install(config) {
   const { StringDecoder } = require('node:string_decoder');
   const electron = require('electron');
   const { app } = electron;
-  app.setPath('userData', config.profile);
+  const setPath = app.setPath.bind(app);
+  const profilePath = require('node:fs').realpathSync(config.profile);
+  app.setPath = (name, value) => setPath(name, name === 'userData' ? profilePath : value);
+  app.setPath('userData', profilePath);
   const setName = app.setName.bind(app);
   const getName = app.getName.bind(app);
   let logicalName = getName();
@@ -102,7 +105,7 @@ function install(config) {
   const inputs = new Map();
   const focusStates = new Map();
   const hostBrowsers = new Map();
-  const popupCaptures = new Map();
+  const windowCaptures = new Map();
   const protocols = new Set(
     config.protocolSchemes
       .map((scheme) => scheme.toLowerCase())
@@ -146,6 +149,7 @@ function install(config) {
         title: w.getTitle(),
         logicalVisible: visibility.get(w.id),
         offscreen: nativeOffscreen.get(w.id)(),
+        captureMode: nativeOffscreen.get(w.id)() ? 'paint' : 'capture',
         nativeVisible: nativeVisibility.get(w.id)(),
       })),
     });
@@ -207,7 +211,7 @@ function install(config) {
       return;
     }
     const size = image.getSize();
-    const [inputWidth, inputHeight] = popupCaptures.get(win.id)?.fallback
+    const [inputWidth, inputHeight] = windowCaptures.get(win.id)?.fallback
       ? [viewport.width, viewport.height]
       : win.getContentSize();
     if (config.frameFormat === 'bgra') {
@@ -244,21 +248,22 @@ function install(config) {
     }
   }
 
-  function watchPopup(win) {
-    if (popupCaptures.has(win.id)) return;
+  function watchCapture(win, capture = false) {
+    if (windowCaptures.has(win.id)) return;
     const state = {
       nativePaint: false,
       busy: false,
       fallback: false,
       metrics: null,
       lastShot: null,
+      capture,
     };
-    popupCaptures.set(win.id, state);
+    windowCaptures.set(win.id, state);
     state.timer = setInterval(
       async () => {
         if (
           state.busy ||
-          state.nativePaint ||
+          (!state.capture && state.nativePaint) ||
           selected !== win ||
           win.isDestroyed() ||
           win.webContents.isLoadingMainFrame()
@@ -266,14 +271,35 @@ function install(config) {
           return;
         state.busy = true;
         try {
+          if (state.capturePage) {
+            const image = await win.webContents.capturePage(undefined, {
+              stayHidden: true,
+              stayAwake: false,
+            });
+            if (!image.isEmpty()) {
+              const shot = image.toPNG().toString('base64');
+              if (shot !== state.lastShot || wholeSurface) {
+                state.lastShot = shot;
+                wholeSurface = true;
+                publishFrame(win, null, image);
+              }
+              return;
+            }
+          }
           if (!state.fallback) {
             const layout = await cdp(win, 'Page.getLayoutMetrics');
-            if ((layout.cssLayoutViewport ?? layout.layoutViewport).clientWidth > 0) return;
+            state.metricsNeeded =
+              (layout.cssLayoutViewport ?? layout.layoutViewport).clientWidth === 0;
+            if (!state.capture && !state.metricsNeeded) return;
             state.fallback = true;
-            send({ type: 'diagnostic', id: win.id, event: 'popup-capture-fallback' });
+            send({
+              type: 'diagnostic',
+              id: win.id,
+              event: state.capture ? 'page-capture-fallback' : 'popup-capture-fallback',
+            });
           }
           const metrics = `${viewport.width}x${viewport.height}`;
-          if (state.metrics !== metrics) {
+          if (state.metricsNeeded && state.metrics !== metrics) {
             await cdp(win, 'Emulation.setDeviceMetricsOverride', {
               width: viewport.width,
               height: viewport.height,
@@ -296,12 +322,20 @@ function install(config) {
             electron.nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64')),
           );
         } catch (error) {
+          if (
+            state.capture &&
+            !state.capturePage &&
+            typeof win.webContents.capturePage === 'function'
+          ) {
+            state.capturePage = true;
+            return;
+          }
           if (!win.isDestroyed() && !state.reported) {
             state.reported = true;
             send({
               type: 'diagnostic',
               id: win.id,
-              event: 'popup-capture-failed',
+              event: state.capture ? 'page-capture-failed' : 'popup-capture-failed',
               message: error.message,
             });
           }
@@ -309,7 +343,7 @@ function install(config) {
           state.busy = false;
         }
       },
-      Math.max(200, 1000 / config.fps),
+      Math.max(capture ? 66 : 200, 1000 / config.fps),
     );
   }
 
@@ -324,18 +358,24 @@ function install(config) {
     selected = win;
     wholeSurface = true;
     for (const window of windows.values())
-      window.webContents.setFrameRate(window === win ? config.fps : 1);
+      window.webContents.setFrameRate?.(window === win ? config.fps : 1);
     win.setContentSize(viewport.width, viewport.height);
     focusWindow(win);
-    win.webContents.invalidate();
+    win.webContents.invalidate?.();
     updateFocus();
     report();
   }
 
   function adopt(win, initialVisible = true) {
+    if (windows.has(win.id)) return win;
     windows.set(win.id, win);
     nativeVisibility.set(win.id, win.isVisible.bind(win));
-    nativeOffscreen.set(win.id, win.webContents.isOffscreen.bind(win.webContents));
+    const offscreen =
+      typeof win.webContents.isOffscreen === 'function'
+        ? win.webContents.isOffscreen.bind(win.webContents)
+        : () => false;
+    nativeOffscreen.set(win.id, offscreen);
+    if (!offscreen()) watchCapture(win, true);
     let minimumSize = win.getMinimumSize(),
       maximumSize = win.getMaximumSize(),
       resizable = win.isResizable();
@@ -410,8 +450,8 @@ function install(config) {
     };
     win.isFullScreen = () => fullscreen;
     win.webContents.on('paint', (_event, dirty, image) => {
-      if (!image.isEmpty() && popupCaptures.has(win.id))
-        popupCaptures.get(win.id).nativePaint = true;
+      if (!image.isEmpty() && windowCaptures.has(win.id))
+        windowCaptures.get(win.id).nativePaint = true;
       publishFrame(win, dirty, image);
     });
     win.webContents.on('render-process-gone', (_event, details) =>
@@ -451,8 +491,8 @@ function install(config) {
       inputs.delete(win.id);
       focusStates.delete(win.id);
       hostBrowsers.delete(win.id);
-      clearInterval(popupCaptures.get(win.id)?.timer);
-      popupCaptures.delete(win.id);
+      clearInterval(windowCaptures.get(win.id)?.timer);
+      windowCaptures.delete(win.id);
       if (selected === win) selected = null;
       if (focusedWindow === win) focusedWindow = null;
       if (!selected) select([...windows.values()].findLast((w) => visibility.get(w.id)));
@@ -488,7 +528,7 @@ function install(config) {
           const child = OriginalWindow.fromWebContents(contents);
           if (child) {
             if (hostBrowsers.has(win.id)) hostBrowsers.set(child.id, hostBrowsers.get(win.id));
-            watchPopup(child);
+            watchCapture(child);
           }
           return contents;
         };
@@ -500,7 +540,7 @@ function install(config) {
     win.webContents.on('did-create-window', (child) => {
       if (!windows.has(child.id)) adopt(child);
       if (hostBrowsers.has(win.id)) hostBrowsers.set(child.id, hostBrowsers.get(win.id));
-      watchPopup(child);
+      watchCapture(child);
     });
     if (initialVisible || !selected) select(win);
     else report();
@@ -815,7 +855,7 @@ function install(config) {
   }
 
   app.on('browser-window-created', (_, win) => {
-    if (!win.webContents.isOffscreen()) {
+    if (typeof win.webContents.isOffscreen === 'function' && !win.webContents.isOffscreen()) {
       win.hide();
       send({
         type: 'error',
@@ -852,7 +892,7 @@ function install(config) {
           wholeSurface = true;
           if (selected) {
             selected.setContentSize(viewport.width, viewport.height);
-            selected.webContents.invalidate();
+            selected.webContents.invalidate?.();
           }
         } else if (message.type === 'pixel-input') {
           queueInput(async () => {

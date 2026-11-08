@@ -12,19 +12,21 @@ The packaged-app launcher currently depends on macOS bundle metadata, signing to
 
 `src/prepare.mjs` makes a cached private bundle, adds an entry shim before the original main module, and ad-hoc signs the copy. The source bundle is unchanged. The cache key includes source signature/resources, archive contents, host path, and preparation version. The profile records and validates its exact runtime identity before launch.
 
-ASAR virtual paths and unpacked executable permissions are preserved. The private copy's archive integrity check, team-scoped entitlements, and explicit library-validation restriction are adjusted to permit the shim and existing native modules. Download quarantine is removed only from the verified private artifact. Integrations tied to the vendor signing identity can fail. A source app update requires a new profile, preserving the old one.
+Archive preparation rewrites the ASAR header and appends only the shim and amended package metadata. The original packed payload, file integrity records, links, and unpacked executables stay intact; the launcher does not extract and repackage every file. Nested helper bundles are signed inside out, including helpers inside versioned frameworks. The private copy's archive integrity check, team-scoped entitlements, and explicit library-validation restriction are adjusted to permit the shim and existing native modules. Download quarantine is removed only from the verified private artifact. Integrations tied to the vendor signing identity can fail. A source app update requires a new profile, preserving the old one.
 
 CommonJS and named ES-module Electron imports pass through the same adapter. Source directories can also run with `--electron PATH`; the default development runtime is installed by `npm run setup`. Direct executable targets have a limited inspector injection path.
 
 ## Windows, frames, and input
 
-The adapter creates hidden offscreen BrowserWindows and provides logical visibility, focus, and window selection. Native min/max constraints do not prevent terminal viewport resizing; the logical API values remain available to the app.
+The adapter creates hidden BrowserWindows and provides logical visibility, focus, and window selection. Standard Electron builds supply offscreen paint events. Builds without offscreen APIs use CDP page screenshots, with hidden `capturePage` as a fallback when CDP capture is unavailable. Capture is serialized and limited to the selected window at the requested frame rate; unchanged frames are skipped. Native min/max constraints do not prevent terminal viewport resizing; the logical API values remain available to the app.
 
 Electron paint events supply BGRA bitmaps and damage metadata over a private Unix socket. Headers are JSON; bitmap payloads are binary. The decoder supports arbitrary fragmentation and UTF-8. Physical raster dimensions are separate from CSS input coordinates, including actual 2x rendering.
 
 Pixel's native engine and surface handle capability negotiation, compositing, terminal graphics, input parsing, and cleanup. Pixel's PageInput executes inside the target app's Electron process. Input operations are serialized so asynchronous paste or editing-key work cannot be overtaken. Clipboard staging waits for the renderer paste event before restoring the prior clipboard; unsupported legacy clipboard formats use plain-text insertion.
 
 Native offscreen popups that finish loading with a zero-sized viewport receive a capability-based CDP capture fallback, preserving the original guest and opener. No app-specific selectors are used.
+
+Each app starts in a separate process group. Shutdown cleans up that group's remaining native helpers and closes inherited output streams. Other desktop instances belong to separate groups.
 
 ## Terminal dialogs and sign-in callbacks
 

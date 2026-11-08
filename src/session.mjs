@@ -54,6 +54,7 @@ export class Session extends EventEmitter {
     super();
     this.target = target;
     this.options = options;
+    this.startedAt = performance.now();
     this.directory = fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-electron-'));
     fs.chmodSync(this.directory, 0o700);
     this.socketPath = path.join(this.directory, 'bridge.sock');
@@ -77,7 +78,10 @@ export class Session extends EventEmitter {
     this.stopping = false;
   }
   progress(stage, message) {
-    fs.appendFileSync(this.logPath, message + '\n');
+    fs.appendFileSync(
+      this.logPath,
+      `[terminal-electron +${Math.round(performance.now() - this.startedAt)}ms] ${message}\n`,
+    );
     this.emit('progress', { stage, message });
   }
   async start() {
@@ -99,6 +103,7 @@ export class Session extends EventEmitter {
           this.directory,
           this.options.cacheRoot,
           profileInfo,
+          (message) => this.progress('preparing', message),
         );
         this.runtime = staged;
         this.preparedPath = staged.path;
@@ -162,6 +167,13 @@ export class Session extends EventEmitter {
         if (!this.stopping) this.emit('app-error', error);
       });
       const decoder = new BridgeDecoder((message) => {
+        if (message.type === 'ready' || (message.type === 'frame' && !this.receivedFrame)) {
+          if (message.type === 'frame') this.receivedFrame = true;
+          fs.appendFileSync(
+            this.logPath,
+            `[terminal-electron +${Math.round(performance.now() - this.startedAt)}ms] ${message.type === 'frame' ? 'First app frame' : 'App runtime ready'}\n`,
+          );
+        }
         if (message.type === 'profile-imported') this.importReport = message;
         this.emit('message', message);
         if (message.type === 'error') this.emit('app-error', new Error(message.message));
@@ -252,6 +264,7 @@ export class Session extends EventEmitter {
       {
         cwd: command.cwd,
         env,
+        detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
@@ -377,15 +390,29 @@ export class Session extends EventEmitter {
     for (const socket of this.dialogConnections) socket.destroy();
     this.dialogServer?.close();
     this.inspector?.close();
+    const signal = (name) => {
+      if (!this.child?.pid) return;
+      try {
+        if (process.platform !== 'win32') process.kill(-this.child.pid, name);
+        else if (!this.closed) this.child.kill(name);
+      } catch (error) {
+        if (error.code !== 'ESRCH') throw error;
+      }
+    };
     if (this.child && !this.closed) {
       const exited = new Promise((resolve) => this.child.once('exit', resolve));
-      this.child.kill('SIGTERM');
+      signal('SIGTERM');
       const timer = setTimeout(() => {
-        if (!this.closed) this.child.kill('SIGKILL');
+        if (!this.closed) signal('SIGKILL');
       }, 2500);
       await exited;
       clearTimeout(timer);
     }
+    // Native helpers may inherit stdio and outlive their parent. Only this
+    // session's process group is owned here; desktop instances have other groups.
+    signal('SIGKILL');
+    this.child?.stdout?.destroy();
+    this.child?.stderr?.destroy();
     this.bridge?.destroy();
     this.server?.close();
     this.log?.end();

@@ -13,7 +13,7 @@ npm run test:picker
 npm run format:check
 ```
 
-The thirteen core tests cover binary/Unicode framing, invalid bitmap lengths, unmanaged-profile refusal, input/IPC/filesystem behavior, hidden utility windows, named ESM imports, packaged ASAR/signing/native helpers, sync/async dialogs, encrypted desktop-auth import, and bounded cleanup of an unresponsive import helper while preserving unrelated instances. The ordinary input test delays native paste to detect premature clipboard restoration and out-of-order Enter.
+The sixteen core tests cover binary/Unicode framing, invalid bitmap lengths, unmanaged-profile refusal, input/IPC/filesystem behavior, hidden utility windows, named ESM imports, packaged ASAR/signing/native helpers, sync/async dialogs, encrypted desktop-auth import, and bounded cleanup of an unresponsive import helper while preserving unrelated instances. Regressions also cover capture without offscreen APIs, deeply nested helper signing, archive payload/integrity preservation, and native-helper process-group cleanup. The ordinary input test delays native paste to detect premature clipboard restoration and out-of-order Enter. Core tests run sequentially to avoid concurrent signed fixture launches.
 
 PTY tests start the production CLI, reconstruct Pixel graphics packets, send real terminal input, verify files saved by the original app backend, and check clean shutdown. The high-DPI test requires actual 2000x1400 source bitmaps displayed at 1000x700. The dialog PTY test selects a Unicode folder through the shared synchronous picker.
 
@@ -41,6 +41,8 @@ npm run test:obsidian
 npm run test:vscode-deep
 npm run test:screenstudio
 npm run test:composite
+npm run test:runtime-capture -- "/Applications/ChatGPT.app"
+python3 test/runtime_pty.py "/Applications/ChatGPT.app"
 ```
 
 Create the signed-in Slack profile with `./run-slack-desktop` first. Close the terminal-hosted instance before running tests against its profile. Slack tests only navigate/search; they never compose or submit messages. Search input requires a positive focus check that excludes the message composer. Recording is not started in Screen Studio.
@@ -54,6 +56,9 @@ Create the signed-in Slack profile with `./run-slack-desktop` first. Close the t
 | VS Code 1.137.0          | 42.10.0          | Repeated editor/save/undo/redo; integrated shell writes a proof file; resize, quit                                                                                                                       | Extensions                                                                                                              |
 | Screen Studio 3.7.5-4595 | 39.2.7           | Controls, unpacked native helper permissions, Window/Display pickers, window switching, utility resize, quit                                                                                             | Recording, camera, microphone, export                                                                                   |
 | Composite 1.0.3          | 37.4.0           | Startup, loaded UI, hidden offscreen window, quit                                                                                                                                                        | Deeper workflows                                                                                                        |
+| ChatGPT / Codex          | 156.0.8078.48    | Full interface loaded through shared page capture; hidden native windows; resize; three consecutive starts and clean quits                                                                               | Conversation submission intentionally excluded; native services retain the app's own lifecycle and shared OS state      |
+
+For ChatGPT/Codex, three cached starts reached the first frame in 2.1–2.8 seconds and the loaded UI in 9.8–11.3 seconds. Initial private-runtime preparation took about 8 seconds on this Mac. These are local observations, not a startup-time guarantee. The app still initializes its own native services, which can use state outside Chromium’s user-data profile. No conversations were submitted.
 
 The user confirmed signed-in Slack works in live Ghostty. Automated terminal checks use PTYs and decoded graphics; other live terminal/app combinations have not been established.
 

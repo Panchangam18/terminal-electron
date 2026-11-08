@@ -1,6 +1,6 @@
 {
   "name": "terminal-electron",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "bin": {
@@ -9,7 +9,7 @@
   "scripts": {
     "setup": "npm install && node node_modules/electron/install.js",
     "start": "node src/cli.mjs",
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "test:pty": "python3 test/pty_smoke.py",
     "test:vscode": "node test/vscode_smoke.mjs",
     "test:slack": "node test/slack_smoke.mjs",
@@ -27,7 +27,8 @@
     "format:check": "prettier --check src test examples docs README.md package.json .prettierrc.json",
     "build:release": "bash scripts/build-release.sh",
     "test:picker": "python3 test/picker_pty.py",
-    "test:completion": "python3 test/completion_pty.py"
+    "test:completion": "python3 test/completion_pty.py",
+    "test:runtime-capture": "node test/runtime_capture_smoke.mjs"
   },
   "engines": {
     "node": ">=22.12"

@@ -73,7 +73,7 @@ TTY <-> Pixel native engine <-> binary bitmap/input bridge
     <-> generic Electron adapter + Pixel PageInput <-> original app
 ```
 
-The adapter redirects Electron windows into offscreen rendering and hosts basic file/message dialogs in Pixel. The app's native platform layer still runs on macOS. This does not execute Windows binaries on a Mac; Windows/Linux hosting would require platform ports and testing.
+The adapter renders hidden Electron windows through paint events, or through page capture when the bundled runtime omits offscreen APIs. Pixel presents the frames and hosts basic file/message dialogs. The app's native platform layer still runs on macOS. This does not execute Windows binaries on a Mac; Windows/Linux hosting would require platform ports and testing.
 
 The runtime uses shared Electron APIs, capabilities, and bundle metadata. **No app-name/bundle-ID branches or app-specific DOM handling are permitted in `src/`.** App-specific launchers and UI tests live outside the runtime. Pixel is used directly; terminal-browser is not a dependency.
 

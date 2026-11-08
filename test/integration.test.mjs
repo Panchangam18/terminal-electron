@@ -7,7 +7,7 @@ import { Session } from '../src/session.mjs';
 import { Input } from './driver.mjs';
 import os from 'node:os';
 import http from 'node:http';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createPackageWithOptions } from '@electron/asar';
 
@@ -71,6 +71,44 @@ test('unmanaged existing profiles are refused before an app can access their cre
   assert.equal(session.child, undefined);
   assert.equal(fs.readFileSync(preferences, 'utf8'), 'existing app data');
 });
+
+test(
+  'shutdown removes native helpers in its own process group and preserves unrelated processes',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'terminal-electron-cleanup-'));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    fs.writeFileSync(
+      path.join(directory, 'package.json'),
+      '{"name":"helper-fixture","main":"main.cjs"}',
+    );
+    fs.writeFileSync(
+      path.join(directory, 'main.cjs'),
+      `globalThis.fixtureHelper=require('node:child_process').spawn('/bin/sleep',['60'],{stdio:'inherit'});`,
+    );
+    const unrelated = spawn('/bin/sleep', ['60']);
+    t.after(() => unrelated.kill());
+    const session = new Session(directory, { test: true });
+    t.after(() => session.stop());
+    await session.start();
+    const pid = await evaluate(session, 'globalThis.fixtureHelper.pid', true);
+    process.kill(pid, 0);
+    await session.stop();
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (error) {
+        if (error.code === 'ESRCH') return false;
+        throw error;
+      }
+    };
+    for (let attempt = 0; attempt < 20 && alive(); attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(alive(), false);
+    process.kill(unrelated.pid, 0);
+  },
+);
 
 test(
   'ordinary app preserves IPC, disk writes, terminal typing/clicking, scroll, resizing, multiple windows, and hidden native windows',
@@ -281,6 +319,67 @@ test('ES-module source app preserves named Electron imports', { timeout: 15000 }
 });
 
 test(
+  'runtimes without offscreen APIs capture hidden windows and retain input and resize',
+  { timeout: 15000 },
+  async (t) => {
+    const session = new Session(fileURLToPath(new URL('../examples/ipc-app', import.meta.url)), {
+      test: true,
+    });
+    t.after(() => session.stop());
+    // Simulate a runtime which omits offscreen APIs and never emits paint. This
+    // modifies only the generated fixture entry, before the adapter is installed.
+    session.on('progress', ({ stage }) => {
+      if (stage !== 'launching') return;
+      const entry = path.join(session.preparedPath, 'main.cjs');
+      fs.writeFileSync(
+        entry,
+        `require('electron').app.on('web-contents-created', (_, contents) => {
+      for (const key of ['isOffscreen','setFrameRate','invalidate']) contents[key] = undefined;
+      const on = contents.on.bind(contents);
+      contents.on = (name, ...args) => name === 'paint' ? contents : on(name, ...args);
+    });\n` + fs.readFileSync(entry, 'utf8'),
+      );
+    });
+    const windows = nextMessage(session, (m) => m.type === 'windows' && m.windows.length === 1);
+    const frame = nextMessage(session, (m) => m.type === 'frame');
+    await session.start();
+    const state = await windows;
+    assert.equal(state.windows[0].offscreen, false);
+    assert.equal(state.windows[0].captureMode, 'capture');
+    assert.equal(state.windows[0].nativeVisible, false);
+    assert.equal(
+      await evaluate(
+        session,
+        `app.setPath('userData', '/tmp/terminal-electron-must-not-use-this');app.getPath('userData')===require('node:fs').realpathSync(config.profile)`,
+        true,
+      ),
+      true,
+    );
+    assert((await frame).width > 0);
+    await poll(session, `!!document.getElementById('note')`, Boolean);
+    const input = new Input(session);
+    const point = await evaluate(
+      session,
+      `(()=>{const r=document.getElementById('note').getBoundingClientRect();return {x:r.x+20,y:r.y+20};})()`,
+    );
+    input.clickAt(point.x, point.y);
+    for (const char of 'Capture input') input.key(char.codePointAt(0));
+    await poll(
+      session,
+      `document.getElementById('note').value`,
+      (value) => value === 'Capture input',
+    );
+    const resized = nextMessage(
+      session,
+      (m) => m.type === 'frame' && m.inputWidth === 820 && m.inputHeight === 510,
+    );
+    session.send({ type: 'resize', width: 820, height: 510 });
+    await resized;
+    assert(await evaluate(session, 'innerWidth===820&&innerHeight===510'));
+  },
+);
+
+test(
   'packaged ASAR app runs through its original Electron binary and leaves input archive unchanged',
   { timeout: 45000, skip: process.platform !== 'darwin' },
   async (t) => {
@@ -324,6 +423,31 @@ test(
         }),
       }),
     );
+    const nestedRelative = 'Contents/Frameworks/Fixture/Versions/A/Helpers/Nested Helper.app';
+    fs.mkdirSync(path.dirname(path.join(bundle, nestedRelative)), { recursive: true });
+    const nested = path.join(bundle, nestedRelative);
+    execFileSync('/bin/cp', [
+      '-cR',
+      path.join(bundle, 'Contents/Frameworks/Electron Helper (Renderer).app'),
+      nested,
+    ]);
+    execFileSync('/usr/bin/plutil', [
+      '-insert',
+      'CFBundleExecutable',
+      '-string',
+      'Electron Helper (Renderer)',
+      path.join(nested, 'Contents/Info.plist'),
+    ]);
+    execFileSync('/usr/bin/codesign', [
+      '--force',
+      '--sign',
+      '-',
+      '--options',
+      'runtime,library',
+      '--entitlements',
+      entitlements,
+      nested,
+    ]);
     execFileSync('/usr/bin/codesign', [
       '--force',
       '--sign',
@@ -344,6 +468,14 @@ test(
     t.after(() => session.stop());
     const windows = nextMessage(session, (m) => m.type === 'windows' && m.windows.length === 1);
     await session.start();
+    const nestedXml = execFileSync(
+      '/usr/bin/codesign',
+      ['-d', '--entitlements', ':-', path.join(session.preparedPath, nestedRelative)],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    assert(nestedXml.includes('com.apple.security.cs.disable-library-validation'), nestedXml);
+    assert(!nestedXml.includes('keychain-access-groups'));
+    assert(!nestedXml.includes('com.apple.developer.associated-domains'));
     const state = await windows;
     assert(state.windows[0].offscreen);
     assert.equal(state.windows[0].nativeVisible, false);
