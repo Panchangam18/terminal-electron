@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { extractFile } from '@electron/asar';
 import { flipFuses, FuseVersion, FuseV1Options } from '@electron/fuses';
-import { electronFramework } from './bundle.mjs';
+import { electronFramework, requireOffscreenBundle } from './bundle.mjs';
 import { patchArchive } from './archive.mjs';
 
 const bootstrap = fileURLToPath(new URL('./bootstrap.cjs', import.meta.url));
@@ -73,6 +73,7 @@ export async function prepareBundle(
   profile = {},
   progress = () => {},
 ) {
+  await requireOffscreenBundle(original);
   cacheRoot = path.resolve(cacheRoot);
   const sourceHash = createHash('sha256').update(original);
   const legacyHash = createHash('sha256').update(

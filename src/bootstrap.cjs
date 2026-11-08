@@ -14,6 +14,11 @@ function install(config) {
   const { StringDecoder } = require('node:string_decoder');
   const electron = require('electron');
   const { app } = electron;
+  if (process.platform === 'darwin' && typeof app.setActivationPolicy === 'function') {
+    // Keep native offscreen view focus working; target code cannot promote the
+    // application to a regular desktop app. The dock is hidden after ready.
+    app.setActivationPolicy = () => {};
+  }
   const setPath = app.setPath.bind(app);
   const profilePath = require('node:fs').realpathSync(config.profile);
   app.setPath = (name, value) => setPath(name, name === 'userData' ? profilePath : value);
@@ -140,6 +145,21 @@ function install(config) {
   const send = (value) => {
     if (!socket.destroyed) socket.write(JSON.stringify(value) + '\n');
   };
+  function failClosed(message) {
+    require('node:fs').writeSync(2, `terminal-electron: ${message}\n`);
+    send({ type: 'error', message });
+    app.exit(1);
+    throw new Error(message);
+  }
+  function requireOffscreenWindow(win) {
+    if (typeof win.webContents.isOffscreen === 'function' && win.webContents.isOffscreen())
+      return true;
+    win.hide();
+    failClosed(
+      'Unsupported runtime: native offscreen rendering is required. Ordinary-window capture is disabled.',
+    );
+    return false;
+  }
   const report = () =>
     send({
       type: 'windows',
@@ -149,7 +169,7 @@ function install(config) {
         title: w.getTitle(),
         logicalVisible: visibility.get(w.id),
         offscreen: nativeOffscreen.get(w.id)(),
-        captureMode: nativeOffscreen.get(w.id)() ? 'paint' : 'capture',
+        captureMode: 'paint',
         nativeVisible: nativeVisibility.get(w.id)(),
       })),
     });
@@ -248,7 +268,7 @@ function install(config) {
     }
   }
 
-  function watchCapture(win, capture = false) {
+  function watchCapture(win) {
     if (windowCaptures.has(win.id)) return;
     const state = {
       nativePaint: false,
@@ -256,14 +276,13 @@ function install(config) {
       fallback: false,
       metrics: null,
       lastShot: null,
-      capture,
     };
     windowCaptures.set(win.id, state);
     state.timer = setInterval(
       async () => {
         if (
           state.busy ||
-          (!state.capture && state.nativePaint) ||
+          state.nativePaint ||
           selected !== win ||
           win.isDestroyed() ||
           win.webContents.isLoadingMainFrame()
@@ -271,31 +290,16 @@ function install(config) {
           return;
         state.busy = true;
         try {
-          if (state.capturePage) {
-            const image = await win.webContents.capturePage(undefined, {
-              stayHidden: true,
-              stayAwake: false,
-            });
-            if (!image.isEmpty()) {
-              const shot = image.toPNG().toString('base64');
-              if (shot !== state.lastShot || wholeSurface) {
-                state.lastShot = shot;
-                wholeSurface = true;
-                publishFrame(win, null, image);
-              }
-              return;
-            }
-          }
           if (!state.fallback) {
             const layout = await cdp(win, 'Page.getLayoutMetrics');
             state.metricsNeeded =
               (layout.cssLayoutViewport ?? layout.layoutViewport).clientWidth === 0;
-            if (!state.capture && !state.metricsNeeded) return;
+            if (!state.metricsNeeded) return;
             state.fallback = true;
             send({
               type: 'diagnostic',
               id: win.id,
-              event: state.capture ? 'page-capture-fallback' : 'popup-capture-fallback',
+              event: 'popup-capture-fallback',
             });
           }
           const metrics = `${viewport.width}x${viewport.height}`;
@@ -322,20 +326,12 @@ function install(config) {
             electron.nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64')),
           );
         } catch (error) {
-          if (
-            state.capture &&
-            !state.capturePage &&
-            typeof win.webContents.capturePage === 'function'
-          ) {
-            state.capturePage = true;
-            return;
-          }
           if (!win.isDestroyed() && !state.reported) {
             state.reported = true;
             send({
               type: 'diagnostic',
               id: win.id,
-              event: state.capture ? 'page-capture-failed' : 'popup-capture-failed',
+              event: 'popup-capture-failed',
               message: error.message,
             });
           }
@@ -343,7 +339,7 @@ function install(config) {
           state.busy = false;
         }
       },
-      Math.max(capture ? 66 : 200, 1000 / config.fps),
+      Math.max(200, 1000 / config.fps),
     );
   }
 
@@ -368,14 +364,11 @@ function install(config) {
 
   function adopt(win, initialVisible = true) {
     if (windows.has(win.id)) return win;
+    if (!requireOffscreenWindow(win)) return win;
     windows.set(win.id, win);
     nativeVisibility.set(win.id, win.isVisible.bind(win));
-    const offscreen =
-      typeof win.webContents.isOffscreen === 'function'
-        ? win.webContents.isOffscreen.bind(win.webContents)
-        : () => false;
+    const offscreen = win.webContents.isOffscreen.bind(win.webContents);
     nativeOffscreen.set(win.id, offscreen);
-    if (!offscreen()) watchCapture(win, true);
     let minimumSize = win.getMinimumSize(),
       maximumSize = win.getMaximumSize(),
       resizable = win.isResizable();
@@ -449,6 +442,18 @@ function install(config) {
       win.emit(fullscreen ? 'enter-full-screen' : 'leave-full-screen');
     };
     win.isFullScreen = () => fullscreen;
+    let kiosk = false;
+    let alwaysOnTop = false;
+    win.setKiosk = (value) => {
+      kiosk = !!value;
+    };
+    win.isKiosk = () => kiosk;
+    win.setAlwaysOnTop = (value) => {
+      alwaysOnTop = !!value;
+    };
+    win.isAlwaysOnTop = () => alwaysOnTop;
+    win.setFocusable = () => {};
+    win.moveTop = () => {};
     win.webContents.on('paint', (_event, dirty, image) => {
       if (!image.isEmpty() && windowCaptures.has(win.id))
         windowCaptures.get(win.id).nativePaint = true;
@@ -509,6 +514,10 @@ function install(config) {
         overrideBrowserWindowOptions: {
           ...options,
           show: false,
+          fullscreen: false,
+          kiosk: false,
+          alwaysOnTop: false,
+          skipTaskbar: true,
           paintWhenInitiallyHidden: true,
           webPreferences: {
             ...options.webPreferences,
@@ -558,6 +567,10 @@ function install(config) {
       const updated = {
         ...options,
         show: false,
+        fullscreen: false,
+        kiosk: false,
+        alwaysOnTop: false,
+        skipTaskbar: true,
         paintWhenInitiallyHidden: true,
         width: viewport.width,
         height: viewport.height,
@@ -584,6 +597,19 @@ function install(config) {
     enumerable: true,
     configurable: false,
   };
+  for (const key of ['BaseWindow', 'WebContentsView', 'BrowserView']) {
+    if (typeof electron[key] !== 'function') continue;
+    descriptors[key] = {
+      value: new Proxy(electron[key], {
+        construct() {
+          return failClosed(`Native ${key} windows/views are not supported in terminal mode.`);
+        },
+      }),
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    };
+  }
   const facade = Object.defineProperties({}, descriptors);
   const dialogCanceled = (kind, options) =>
     kind === 'message'
@@ -662,11 +688,13 @@ function install(config) {
   electron.dialog.showErrorBox = (title, content) => {
     requestDialog('message', [{ title, message: content, buttons: ['OK'] }], true);
   };
-  const openExternal = electron.shell.openExternal.bind(electron.shell);
   electron.shell.openExternal = async (url, options) => {
     if (deliverURL(url, selected)) return;
     const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol)) return openExternal(url, options);
+    if (!['http:', 'https:'].includes(parsed.protocol))
+      return failClosed(
+        'An app requested an external native application or System Settings. Desktop handoff is disabled in terminal mode.',
+      );
     const opener = selected;
     const browser = new Window({
       title: parsed.hostname,
@@ -854,17 +882,43 @@ function install(config) {
     return inputs.get(win.id);
   }
 
-  app.on('browser-window-created', (_, win) => {
-    if (typeof win.webContents.isOffscreen === 'function' && !win.webContents.isOffscreen()) {
-      win.hide();
-      send({
-        type: 'error',
-        message:
-          'A window bypassed constructor interception. This app/runtime is not supported yet.',
-      });
-      setImmediate(() => app.exit(1));
-    }
-  });
+  app.on('browser-window-created', (_, win) => requireOffscreenWindow(win));
+  app.show = app.focus = () => {
+    if (selected) select(selected);
+  };
+  app.hide = () => {
+    for (const win of windows.values()) win.hide();
+  };
+  app.relaunch = () =>
+    failClosed(
+      'Native app relaunch is disabled in terminal mode. Restart through terminal-electron.',
+    );
+  if (app.dock) {
+    app.dock.show = async () => {};
+    app.dock.bounce = () => -1;
+  }
+  const preferences = electron.systemPreferences;
+  if (typeof preferences?.isTrustedAccessibilityClient === 'function') {
+    const trusted = preferences.isTrustedAccessibilityClient.bind(preferences);
+    preferences.isTrustedAccessibilityClient = (prompt) => {
+      const allowed = trusted(false);
+      if (prompt && !allowed)
+        failClosed(
+          'The app requested macOS Accessibility permission. Native permission prompting is unsupported in terminal mode.',
+        );
+      return allowed;
+    };
+  }
+  if (typeof electron.desktopCapturer?.getSources === 'function') {
+    const getSources = electron.desktopCapturer.getSources.bind(electron.desktopCapturer);
+    electron.desktopCapturer.getSources = (options) => {
+      if (process.platform === 'darwin' && preferences.getMediaAccessStatus('screen') !== 'granted')
+        return failClosed(
+          'The app requested macOS Screen Recording permission. Native permission prompting is unsupported in terminal mode.',
+        );
+      return getSources(options);
+    };
+  }
   app.whenReady().then(() => app.dock?.hide());
   socket.on('connect', () =>
     send({

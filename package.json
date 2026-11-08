@@ -1,6 +1,6 @@
 {
   "name": "terminal-electron",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "bin": {
@@ -28,7 +28,7 @@
     "build:release": "bash scripts/build-release.sh",
     "test:picker": "python3 test/picker_pty.py",
     "test:completion": "python3 test/completion_pty.py",
-    "test:runtime-capture": "node test/runtime_capture_smoke.mjs"
+    "test:runtime-startup": "node test/runtime_startup_smoke.mjs"
   },
   "engines": {
     "node": ">=22.12"

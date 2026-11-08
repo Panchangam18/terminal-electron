@@ -1,6 +1,6 @@
 # terminal-electron
 
-Run a local Electron app inside Ghostty or Kitty, with its original desktop runtime, backend, preloads, native modules, and IPC.
+Run a compatible local Electron app inside Ghostty or Kitty, with its original desktop runtime, backend, preloads, native modules, and IPC.
 
 ```sh
 curl -fsSL https://github.com/Panchangam18/terminal-electron/releases/latest/download/get.sh | bash
@@ -15,7 +15,7 @@ Run **`terminal-electron`** to search and choose from the Electron apps on your 
 terminal-electron "/Applications/Slack.app"
 ```
 
-The selector reads application metadata and recognizes standard or renamed Electron frameworks. It checks standard Applications folders, the current directory, and Spotlight's app index, without launching apps during discovery. Suggestions appear inline beneath the command, using ordinary terminal text. Type to filter, use Tab/Shift+Tab or Up/Down, then Enter to launch; Escape cancels. Scrollback stays visible. `terminal-electron --list` lists paths without opening the picker, and `--app-dir PATH` includes an additional folder.
+The selector reads application metadata and checks native offscreen support in standard or renamed Electron frameworks. It checks standard Applications folders, the current directory, and Spotlight's app index, without launching apps during discovery. Suggestions appear inline beneath the command, using ordinary terminal text. Type to filter, use Tab/Shift+Tab or Up/Down, then Enter to launch; Escape cancels. Scrollback stays visible. `terminal-electron --list` lists paths without opening the picker, and `--app-dir PATH` includes an additional folder.
 
 The prebuilt release requires **Apple Silicon macOS 14+** and Ghostty or Kitty with Kitty graphics support. Apps are not bundled. Pixel 0.0.20 supplies the compositor, terminal protocol, and input handling. Optional desktop-auth import currently requires Python 3.
 
@@ -64,7 +64,7 @@ Set `TERMINAL_ELECTRON_SLACK_APP` for a custom Slack bundle path, `TERMINAL_ELEC
 | Mouse, wheel, keyboard, bracketed paste | Forward to Electron                      |
 | Ctrl+L / Escape in a file dialog        | Edit the path / cancel                   |
 
-Terminal shortcuts can intercept keys before they reach the app. Logs and profile paths are printed at startup. Run `terminal-electron --help` for options, including `--fps` and arguments forwarded after `--`.
+Terminal shortcuts can intercept keys before they reach the app. Logs and profile paths are printed at startup. Default logs are retained under the host installation’s private `profiles/logs` directory, outside the temporary session folder, so they survive a reboot. Run `terminal-electron --help` for options, including `--fps` and arguments forwarded after `--`.
 
 ## How it works
 
@@ -73,7 +73,9 @@ TTY <-> Pixel native engine <-> binary bitmap/input bridge
     <-> generic Electron adapter + Pixel PageInput <-> original app
 ```
 
-The adapter renders hidden Electron windows through paint events, or through page capture when the bundled runtime omits offscreen APIs. Pixel presents the frames and hosts basic file/message dialogs. The app's native platform layer still runs on macOS. This does not execute Windows binaries on a Mac; Windows/Linux hosting would require platform ports and testing.
+Native offscreen rendering is required. Runtimes without it are rejected before preparation or launch. The ordinary-window capture fallback introduced in v0.2.2 has been removed after a reported screen takeover and repeated permission prompts. The installed ChatGPT/Codex runtime is currently unsupported; detection as Electron alone does not establish compatibility.
+
+The adapter renders hidden offscreen Electron windows through paint events. Pixel presents the frames and hosts basic file/message dialogs. The app's native platform layer still runs on macOS. This does not execute Windows binaries on a Mac; Windows/Linux hosting would require platform ports and testing.
 
 The runtime uses shared Electron APIs, capabilities, and bundle metadata. **No app-name/bundle-ID branches or app-specific DOM handling are permitted in `src/`.** App-specific launchers and UI tests live outside the runtime. Pixel is used directly; terminal-browser is not a dependency.
 
@@ -108,3 +110,5 @@ Profiles, prepared app copies, local screenshots/logs, and test evidence are exc
 This is a compatibility prototype, not universal Electron support. Native menus/tray, drag-and-drop, security/TCC dialogs, OS-level protocol invocation, and BaseWindow/WebContentsView need more work or verification. The adapter hosts basic open/save/message dialogs, not every platform option. Features tied to the vendor's original signing identity may fail in the private copy.
 
 The bridge copies full BGRA frames at up to 15 fps by default. Shared-memory/GPU transport, performance benchmarks, and other operating systems are not implemented or verified.
+
+Terminal graphics do not require macOS Screen Recording or Accessibility access. New adapter instances stop before Electron requests either missing permission, opens an external native application/System Settings, relaunches as a desktop app, or constructs unsupported native window types. Original native modules and helpers still run with local user privileges; a private Chromium profile is not an operating-system sandbox. Existing profiles remain pinned to their earlier adapter/runtime identity.

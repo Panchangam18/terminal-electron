@@ -319,67 +319,6 @@ test('ES-module source app preserves named Electron imports', { timeout: 15000 }
 });
 
 test(
-  'runtimes without offscreen APIs capture hidden windows and retain input and resize',
-  { timeout: 15000 },
-  async (t) => {
-    const session = new Session(fileURLToPath(new URL('../examples/ipc-app', import.meta.url)), {
-      test: true,
-    });
-    t.after(() => session.stop());
-    // Simulate a runtime which omits offscreen APIs and never emits paint. This
-    // modifies only the generated fixture entry, before the adapter is installed.
-    session.on('progress', ({ stage }) => {
-      if (stage !== 'launching') return;
-      const entry = path.join(session.preparedPath, 'main.cjs');
-      fs.writeFileSync(
-        entry,
-        `require('electron').app.on('web-contents-created', (_, contents) => {
-      for (const key of ['isOffscreen','setFrameRate','invalidate']) contents[key] = undefined;
-      const on = contents.on.bind(contents);
-      contents.on = (name, ...args) => name === 'paint' ? contents : on(name, ...args);
-    });\n` + fs.readFileSync(entry, 'utf8'),
-      );
-    });
-    const windows = nextMessage(session, (m) => m.type === 'windows' && m.windows.length === 1);
-    const frame = nextMessage(session, (m) => m.type === 'frame');
-    await session.start();
-    const state = await windows;
-    assert.equal(state.windows[0].offscreen, false);
-    assert.equal(state.windows[0].captureMode, 'capture');
-    assert.equal(state.windows[0].nativeVisible, false);
-    assert.equal(
-      await evaluate(
-        session,
-        `app.setPath('userData', '/tmp/terminal-electron-must-not-use-this');app.getPath('userData')===require('node:fs').realpathSync(config.profile)`,
-        true,
-      ),
-      true,
-    );
-    assert((await frame).width > 0);
-    await poll(session, `!!document.getElementById('note')`, Boolean);
-    const input = new Input(session);
-    const point = await evaluate(
-      session,
-      `(()=>{const r=document.getElementById('note').getBoundingClientRect();return {x:r.x+20,y:r.y+20};})()`,
-    );
-    input.clickAt(point.x, point.y);
-    for (const char of 'Capture input') input.key(char.codePointAt(0));
-    await poll(
-      session,
-      `document.getElementById('note').value`,
-      (value) => value === 'Capture input',
-    );
-    const resized = nextMessage(
-      session,
-      (m) => m.type === 'frame' && m.inputWidth === 820 && m.inputHeight === 510,
-    );
-    session.send({ type: 'resize', width: 820, height: 510 });
-    await resized;
-    assert(await evaluate(session, 'innerWidth===820&&innerHeight===510'));
-  },
-);
-
-test(
   'packaged ASAR app runs through its original Electron binary and leaves input archive unchanged',
   { timeout: 45000, skip: process.platform !== 'darwin' },
   async (t) => {

@@ -135,11 +135,7 @@ export class Harness extends Input {
   }
   hidden() {
     assert(this.windows?.windows.length);
-    assert(
-      this.windows.windows.every(
-        (w) => (w.offscreen || w.captureMode === 'capture') && !w.nativeVisible,
-      ),
-    );
+    assert(this.windows.windows.every((w) => w.offscreen && !w.nativeVisible));
   }
   async step(label, operation) {
     const start = Date.now();

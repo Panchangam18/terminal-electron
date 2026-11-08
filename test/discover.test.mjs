@@ -27,6 +27,7 @@ test('renamed frameworks are recognized by Electron fuse data, without an app-na
       Buffer.from('binary fixture\0dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX'),
       Buffer.from([1, 9]),
       Buffer.from('010011001'),
+      Buffer.from('isOffscreen\0startPainting\0stopPainting\0isPainting\0'),
     ]),
   );
   fs.writeFileSync(
@@ -66,10 +67,14 @@ test('discovery finds nested Electron apps, deduplicates symlinks, and excludes 
       path.join(bundle, 'Contents/Info.plist'),
       JSON.stringify({ CFBundleName: name, CFBundleExecutable: 'app' }),
     );
-    if (electron)
-      fs.mkdirSync(path.join(bundle, 'Contents/Frameworks/Electron Framework.framework'), {
-        recursive: true,
-      });
+    if (electron) {
+      const engine = path.join(bundle, 'Contents/Frameworks/Electron Framework.framework');
+      fs.mkdirSync(engine, { recursive: true });
+      fs.writeFileSync(
+        path.join(engine, 'Electron Framework'),
+        'isOffscreen\0startPainting\0stopPainting\0isPainting\0',
+      );
+    }
     return bundle;
   };
   const valid = app('Nested folder', 'Fixture café');

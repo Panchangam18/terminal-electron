@@ -4,7 +4,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { extractFile } from '@electron/asar';
-import { electronFramework } from './bundle.mjs';
+import { requireOffscreenBundle } from './bundle.mjs';
 
 const exec = promisify(execFile);
 const ignored = new Set(['node_modules', 'profiles', 'proof', 'work', 'Caches', 'Library']);
@@ -86,7 +86,7 @@ export async function discoverApplications({
             !(await exists(path.join(resources, 'app/package.json')))
           )
             continue;
-          if (!(await electronFramework(file))) continue;
+          await requireOffscreenBundle(file);
           try {
             const archive = path.join(resources, 'app.asar');
             const pkg = JSON.parse(

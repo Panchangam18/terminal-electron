@@ -18,7 +18,11 @@ CommonJS and named ES-module Electron imports pass through the same adapter. Sou
 
 ## Windows, frames, and input
 
-The adapter creates hidden BrowserWindows and provides logical visibility, focus, and window selection. Standard Electron builds supply offscreen paint events. Builds without offscreen APIs use CDP page screenshots, with hidden `capturePage` as a fallback when CDP capture is unavailable. Capture is serialized and limited to the selected window at the requested frame rate; unchanged frames are skipped. Native min/max constraints do not prevent terminal viewport resizing; the logical API values remain available to the app.
+The launcher performs a conservative static admission check for native offscreen API markers before preparing, importing or launching any bundle, executable or source-app runtime. Discovery applies the same check. This check executes no target code. Missing markers cause rejection; present markers alone do not prove compatibility. Every actual BrowserWindow must also report native offscreen rendering, or the process exits immediately.
+
+The ordinary-window page capture mode from v0.2.2 is disabled. It could display the app while native helpers and macOS permission dialogs escaped the terminal. Sampling hidden-window state during a rendering test did not establish containment.
+
+The adapter creates hidden offscreen BrowserWindows and supplies logical visibility, focus, fullscreen and window selection. Constructor options cannot request a native fullscreen/kiosk window, and app-level show/focus/dock/relaunch calls cannot expose a desktop instance through the supported Electron APIs. Unsupported BaseWindow/WebContentsView/BrowserView construction stops the app. Native min/max constraints do not prevent terminal viewport resizing; logical API values remain available to the app.
 
 Electron paint events supply BGRA bitmaps and damage metadata over a private Unix socket. Headers are JSON; bitmap payloads are binary. The decoder supports arbitrary fragmentation and UTF-8. Physical raster dimensions are separate from CSS input coordinates, including actual 2x rendering.
 
@@ -30,7 +34,7 @@ Each app starts in a separate process group. Shutdown cleans up that group's rem
 
 ## Terminal dialogs and sign-in callbacks
 
-Open/save/message APIs use a shared Pixel overlay. Async calls wait on a private dialog socket. Sync calls use a small Node IPC client while Electron's main process blocks; the separate terminal frontend stays responsive. The selected paths or responses return to the original app backend. Security/Keychain/TCC dialogs are not replaced.
+Open/save/message APIs use a shared Pixel overlay. Async calls wait on a private dialog socket. Sync calls use a small Node IPC client while Electron's main process blocks; the separate terminal frontend stays responsive. The selected paths or responses return to the original app backend. Security/Keychain/TCC dialogs are not replaced. New adapter instances check Accessibility without requesting consent and stop before prompting when access is missing. Electron desktop capture stops before requesting missing Screen Recording access. Non-web external handoffs, including System Settings links, stop the app rather than opening native UI. These hooks do not intercept arbitrary native addons or helper executables; the app still runs with local user privileges and can access shared native services. Pinned older profiles retain their earlier adapter, while prelaunch admission still applies to every target. This is not an OS sandbox.
 
 HTTPS links open in a sandboxed terminal-hosted browser with Node integration disabled. Callback schemes are read from bundle metadata and routed to the app's `open-url` handler. The callback closes the browser popup group and returns to the original app window without changing system protocol defaults. The nested-popup callback fixture passes; a repeat real Slack OAuth flow after the popup cleanup fix has not been verified.
 
@@ -48,7 +52,7 @@ Prepared apps use a stable, private `Terminal Electron … Safe Storage` credent
 
 This supports Chromium cookie/profile authentication. It does not migrate arbitrary native credential stores, saved passwords, or partitioned cookies. Applications may still require sign-in when their authentication depends on other platform-specific mechanisms.
 
-The original app must be able to read its existing credential store. Import is explicit and is never retried automatically. If cookie access times out, cleanup first requests normal termination and then kills only processes using the unique snapshot profile if necessary. The source desktop instance and other app sessions are preserved. Startup progress is shown in the CLI, and a private log exists even when preparation or import fails.
+The original app must be able to read its existing credential store. Import is explicit and is never retried automatically. If cookie access times out, cleanup first requests normal termination and then kills only processes using the unique snapshot profile if necessary. The source desktop instance and other app sessions are preserved. Startup progress is shown in the CLI. Private logs are retained in the host installation’s `profiles/logs` directory rather than the temporary session directory, including preparation/import failures and adapter rejection reasons.
 
 ## Runtime policy
 

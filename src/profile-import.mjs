@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { Inspector } from './inspector.mjs';
+import { requireOffscreenBundle } from './bundle.mjs';
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -94,6 +95,7 @@ export async function exportProfileSession(target, source, directory) {
   source = fs.realpathSync(source);
   const profile = path.join(directory, 'desktop-profile-snapshot');
   const bundle = fs.realpathSync(target);
+  await requireOffscreenBundle(bundle);
   execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', bundle], { stdio: 'pipe' });
   execFileSync('/bin/cp', ['-cR', source, profile]);
   fs.chmodSync(profile, 0o700);

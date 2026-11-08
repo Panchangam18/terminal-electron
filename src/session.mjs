@@ -12,7 +12,7 @@ import { prepareSource, prepareBundle } from './prepare.mjs';
 import { BridgeDecoder } from './bridge.mjs';
 import { exportProfileSession, installProfileSnapshot } from './profile-import.mjs';
 import { canceledDialog } from './dialog.mjs';
-import { electronFramework } from './bundle.mjs';
+import { requireOffscreenBundle, requireOffscreenExecutable } from './bundle.mjs';
 
 const require = createRequire(import.meta.url);
 const bootstrap = fileURLToPath(new URL('./bootstrap.cjs', import.meta.url));
@@ -25,8 +25,7 @@ export async function resolveApp(target, runtime) {
       ['-c', 'Print :CFBundleExecutable', path.join(absolute, 'Contents/Info.plist')],
       { encoding: 'utf8' },
     ).trim();
-    if (!(await electronFramework(absolute)))
-      throw new Error('This bundle does not contain an Electron Framework.');
+    await requireOffscreenBundle(absolute);
     return {
       executable: path.join(absolute, 'Contents/MacOS', executable),
       args: [],
@@ -44,8 +43,10 @@ export async function resolveApp(target, runtime) {
         executable = require('electron');
       }
     }
+    await requireOffscreenExecutable(executable);
     return { executable, args: [absolute], cwd: absolute };
   }
+  await requireOffscreenExecutable(absolute);
   return { executable: absolute, args: [], cwd: path.dirname(absolute) };
 }
 
@@ -60,8 +61,16 @@ export class Session extends EventEmitter {
     this.socketPath = path.join(this.directory, 'bridge.sock');
     this.dialogSocketPath = path.join(this.directory, 'dialog.sock');
     this.dialogConnections = new Set();
-    this.logPath = options.log ?? path.join(this.directory, 'app.log');
+    const logs = fileURLToPath(new URL('../profiles/logs/', import.meta.url));
+    if (!options.log) fs.mkdirSync(logs, { recursive: true, mode: 0o700 });
+    this.logPath =
+      options.log ??
+      path.join(
+        logs,
+        `${new Date().toISOString().replaceAll(':', '-')}-${path.basename(this.directory)}.log`,
+      );
     fs.closeSync(fs.openSync(this.logPath, 'a', 0o600));
+    fs.appendFileSync(this.logPath, `[terminal-electron] Target: ${target}\n`);
     this.profile = options.profile
       ? path.resolve(options.profile)
       : path.join(this.directory, 'profile');
